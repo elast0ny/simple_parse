@@ -45,10 +45,17 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// Parses utf8 characters up to a null terminator or max_bytes
-fn string_read(input: &[u8], max_bytes: usize) -> Result<(&[u8], String), SpError> {
-    let (ascii_bytes, rest) = input.split_at(max_bytes);
+// Parses utf8 characters up to a null terminator or num_bytes
+fn string_read(input: &[u8], num_bytes: usize) -> Result<(&[u8], String), SpError> {
+    
+    // Makes sure theres at least num_bytes
+    if input.len() < num_bytes {
+        return Err(SpError::NotEnoughBytes);
+    }
 
+    let (ascii_bytes, rest) = input.split_at(num_bytes);
+
+    // Attempt to find null terminator
     let mut sz = 0;
     for b in ascii_bytes.iter() {
         if *b == 0x00 {
