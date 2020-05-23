@@ -69,7 +69,7 @@ fn generate_struct_read(data: &DataStruct, attrs: StructAttributes) -> TokenStre
     quote! {
         let mut rest = input.as_ref();
         #read_code
-        Ok((input, Self#field_list))
+        Ok((rest, Self#field_list))
     }
 }
 
