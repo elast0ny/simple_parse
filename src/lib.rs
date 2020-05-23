@@ -18,8 +18,7 @@ pub trait SpRead {
 }
 
 pub trait SpWrite {
-    fn inner_to_bytes(&mut self, is_output_le: bool)
-        -> Result<Vec<u8>, SpError>;
+    fn inner_to_bytes(&mut self, is_output_le: bool) -> Result<Vec<u8>, SpError>;
 
     /// Convert the current contents of the struct to bytes.
     /// This function potentially changes the content of self and
@@ -72,10 +71,7 @@ macro_rules! ImplSpTraits {
         }
 
         impl SpWrite for $typ {
-            fn inner_to_bytes(
-                &mut self,
-                is_output_le: bool,
-            ) -> Result<Vec<u8>, SpError> {
+            fn inner_to_bytes(&mut self, is_output_le: bool) -> Result<Vec<u8>, SpError> {
                 let value = if is_output_le {
                     self.to_le_bytes()
                 } else {
@@ -141,10 +137,7 @@ impl<T: SpRead> SpRead for Vec<T> {
 }
 
 impl<T: SpWrite> SpWrite for Vec<T> {
-    fn inner_to_bytes(
-        &mut self,
-        is_output_le: bool,
-    ) -> Result<Vec<u8>, SpError> {
+    fn inner_to_bytes(&mut self, is_output_le: bool) -> Result<Vec<u8>, SpError> {
         let mut res = Vec::new();
 
         for tmp in self.iter_mut() {

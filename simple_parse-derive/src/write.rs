@@ -146,6 +146,7 @@ fn generate_field_write(fields: &Fields, obj_name: Option<&str>, default_is_le: 
         // Pick between custom write or default
         let write_call = match field_attrs.writer {
             Some(s) => {
+                let s: TokenStream = s.parse().unwrap();
                 quote! {
                     {
                         let input = #field_ident;

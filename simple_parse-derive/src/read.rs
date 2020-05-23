@@ -152,11 +152,12 @@ fn generate_field_read(fields: &Fields, default_is_le: bool) -> (Vec<TokenStream
 
         let read_call = match field_attrs.reader {
             Some(s) => {
+                let s: TokenStream = s.parse().unwrap();
                 quote! {
                     {
                         let input = rest;
                         let is_input_le = #is_input_le;
-                        let count = #count_field;
+                        let count: Option<usize> = #count_field;
                         #s
                     }
                 }
