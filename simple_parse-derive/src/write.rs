@@ -93,7 +93,7 @@ fn generate_enum_write(data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
         let variant_id =
             syn::LitInt::new(&var_attrs.id.to_string(), proc_macro2::Span::call_site());
 
-        let field_list = generate_field_list(&variant.fields, None);
+        let field_list = generate_field_list(&variant.fields, None, None);
         let field_write_code = generate_field_write(&variant.fields, None, default_is_le);
 
         variant_code_gen.extend(quote! {
@@ -158,9 +158,15 @@ fn generate_field_write(
         let write_call = match field_attrs.writer {
             Some(s) => {
                 let s: TokenStream = s.parse().unwrap();
+                let mut ref_mut = quote!{};
+                if obj_name.is_some() {
+                    ref_mut = quote! {
+                        &mut
+                    };
+                }
                 quote! {
                     {
-                        let input = #field_ident;
+                        let input = #ref_mut #field_ident;
                         let is_input_le = #is_input_le;
                         #s
                     }

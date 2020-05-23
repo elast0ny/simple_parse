@@ -180,8 +180,13 @@ pub(crate) fn is_lower_endian(val: &str) -> bool {
 ///     (field_0, field_1, field_2)
 /// OR
 ///     {some_field, timestamp, secret_key}
-fn generate_field_list(fields: &Fields, field_idents: Option<&Vec<proc_macro2::TokenStream>>) -> proc_macro2::TokenStream {
+fn generate_field_list(fields: &Fields, field_idents: Option<&Vec<proc_macro2::TokenStream>>, prefix: Option<&str>) -> proc_macro2::TokenStream {
     let mut tmp;
+
+    if let Fields::Unit = fields {
+        return quote!{};
+    }
+
     let field_idents = match field_idents {
         Some(f) => f,
         None => {
@@ -193,15 +198,26 @@ fn generate_field_list(fields: &Fields, field_idents: Option<&Vec<proc_macro2::T
         }
     };
 
+    let prefix = match prefix {
+        Some(s) => s.parse().unwrap(),
+        None => proc_macro2::TokenStream::new(),
+    };
+    
+    let mut field_list = proc_macro2::TokenStream::new();
+    for f in field_idents {
+        field_list.extend(quote!{
+            #prefix #f,
+        });
+    }
+
     match fields {
-        Fields::Named(_) => quote! {
-            {#(#field_idents),*}
+        Fields::Named(_) => 
+        quote! {
+            {#field_list}
         },
         Fields::Unnamed(_) => quote! {
-            (#(#field_idents),*)
+            (#field_list)
         },
-        Fields::Unit => {
-            quote! {}
-        }
+        _ => {unreachable!()},
     }
 }

@@ -64,7 +64,7 @@ fn generate_struct_read(data: &DataStruct, attrs: StructAttributes) -> TokenStre
     };
 
     let (field_idents, read_code) = generate_field_read(&data.fields, default_is_le);
-    let field_list = generate_field_list(&data.fields, Some(&field_idents));
+    let field_list = generate_field_list(&data.fields, Some(&field_idents), None);
 
     quote! {
         let mut rest = input.as_ref();
@@ -103,7 +103,7 @@ fn generate_enum_read(data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
         let variant_id =
             syn::LitInt::new(&var_attrs.id.to_string(), proc_macro2::Span::call_site());
         let (field_idents, read_code) = generate_field_read(&variant.fields, default_is_le);
-        let field_list = generate_field_list(&variant.fields, Some(&field_idents));
+        let field_list = generate_field_list(&variant.fields, Some(&field_idents), None);
         variant_code_gen.extend(quote! {
             #variant_id => {
                 #read_code

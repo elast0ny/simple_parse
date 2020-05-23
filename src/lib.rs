@@ -7,23 +7,23 @@ pub trait SpRead {
         input: &[u8],
         is_input_le: bool,
         count: Option<usize>,
-    ) -> Result<(&[u8], Self), SpError>
+    ) -> Result<(&[u8], Self), crate::SpError>
     where
         Self: Sized;
 
     /// Convert arbitrary bytes to Self
-    fn from_bytes(input: &[u8]) -> Result<(&[u8], Self), SpError>
+    fn from_bytes(input: &[u8]) -> Result<(&[u8], Self), crate::SpError>
     where
         Self: Sized;
 }
 
 pub trait SpWrite {
-    fn inner_to_bytes(&mut self, is_output_le: bool) -> Result<Vec<u8>, SpError>;
+    fn inner_to_bytes(&mut self, is_output_le: bool) -> Result<Vec<u8>, crate::SpError>;
 
     /// Convert the current contents of the struct to bytes.
     /// This function potentially changes the content of self and
     /// can fail.
-    fn to_bytes(&mut self) -> Result<Vec<u8>, SpError>;
+    fn to_bytes(&mut self) -> Result<Vec<u8>, crate::SpError>;
 }
 
 macro_rules! ImplSpTraits {
@@ -33,7 +33,7 @@ macro_rules! ImplSpTraits {
                 input: &[u8],
                 is_input_le: bool,
                 _count: Option<usize>,
-            ) -> Result<(&[u8], Self), SpError>
+            ) -> Result<(&[u8], Self), crate::SpError>
             where
                 Self: Sized,
             {
@@ -62,7 +62,7 @@ macro_rules! ImplSpTraits {
                 Ok((rest, value))
             }
 
-            fn from_bytes(input: &[u8]) -> Result<(&[u8], Self), SpError>
+            fn from_bytes(input: &[u8]) -> Result<(&[u8], Self), crate::SpError>
             where
                 Self: Sized,
             {
@@ -71,7 +71,7 @@ macro_rules! ImplSpTraits {
         }
 
         impl SpWrite for $typ {
-            fn inner_to_bytes(&mut self, is_output_le: bool) -> Result<Vec<u8>, SpError> {
+            fn inner_to_bytes(&mut self, is_output_le: bool) -> Result<Vec<u8>, crate::SpError> {
                 let value = if is_output_le {
                     self.to_le_bytes()
                 } else {
@@ -81,7 +81,7 @@ macro_rules! ImplSpTraits {
                 Ok(Vec::from(value.as_ref()))
             }
 
-            fn to_bytes(&mut self) -> Result<Vec<u8>, SpError> {
+            fn to_bytes(&mut self) -> Result<Vec<u8>, crate::SpError> {
                 self.inner_to_bytes(true)
             }
         }
@@ -106,7 +106,7 @@ impl<T: SpRead> SpRead for Vec<T> {
         input: &[u8],
         is_input_le: bool,
         count: Option<usize>,
-    ) -> Result<(&[u8], Self), SpError>
+    ) -> Result<(&[u8], Self), crate::SpError>
     where
         Self: Sized,
     {
@@ -128,7 +128,7 @@ impl<T: SpRead> SpRead for Vec<T> {
         Ok((rest, res))
     }
 
-    fn from_bytes(input: &[u8]) -> Result<(&[u8], Self), SpError>
+    fn from_bytes(input: &[u8]) -> Result<(&[u8], Self), crate::SpError>
     where
         Self: Sized,
     {
@@ -137,7 +137,7 @@ impl<T: SpRead> SpRead for Vec<T> {
 }
 
 impl<T: SpWrite> SpWrite for Vec<T> {
-    fn inner_to_bytes(&mut self, is_output_le: bool) -> Result<Vec<u8>, SpError> {
+    fn inner_to_bytes(&mut self, is_output_le: bool) -> Result<Vec<u8>, crate::SpError> {
         let mut res = Vec::new();
 
         for tmp in self.iter_mut() {
@@ -147,7 +147,7 @@ impl<T: SpWrite> SpWrite for Vec<T> {
         Ok(res)
     }
 
-    fn to_bytes(&mut self) -> Result<Vec<u8>, SpError> {
+    fn to_bytes(&mut self) -> Result<Vec<u8>, crate::SpError> {
         self.inner_to_bytes(true)
     }
 }
