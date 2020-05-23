@@ -10,12 +10,12 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     // Generate the code that implements the read()
     let generated_code = match input.data {
-        // Parse as a struct
+        // Sruct
         Data::Struct(ref contents) => {
             let attrs = FromDeriveInput::from_derive_input(&input).unwrap();
             generate_struct_write(contents, attrs)
         }
-        // Parse as enum
+        // Enum
         Data::Enum(ref contents) => {
             let attrs = FromDeriveInput::from_derive_input(&input).unwrap();
             generate_enum_write(contents, attrs)
@@ -49,6 +49,7 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     proc_macro::TokenStream::from(expanded)
 }
 
+/// Generates the code that dumps each field of the struct into the Vec<u8>
 fn generate_struct_write(data: &DataStruct, attrs: StructAttributes) -> TokenStream {
     let default_is_le: bool = match attrs.endian {
         None => {
@@ -64,6 +65,8 @@ fn generate_struct_write(data: &DataStruct, attrs: StructAttributes) -> TokenStr
     generate_field_write(&data.fields, Some("self"), default_is_le)
 }
 
+/// Generates the code that matches the current enum variant and dumps bytes
+/// for each of its fields
 fn generate_enum_write(data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
     
     let var_id_type = match attrs.id_type {
@@ -90,14 +93,15 @@ fn generate_enum_write(data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
         let variant_name = &variant.ident;
         let variant_id =
             syn::LitInt::new(&var_attrs.id.to_string(), proc_macro2::Span::call_site());
+        
         let field_list = generate_field_list(&variant.fields, None);
-        let assign_code = generate_field_write(&variant.fields, None, default_is_le);
+        let field_write_code = generate_field_write(&variant.fields, None, default_is_le);
         
         variant_code_gen.extend(quote! {
             Self::#variant_name#field_list => {
                 let mut var_id: #var_id_type = #variant_id;
                 res.append(&mut var_id.inner_to_bytes(#default_is_le)?);
-                #assign_code
+                #field_write_code
             },
         });
     }
@@ -109,6 +113,9 @@ fn generate_enum_write(data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
     }
 }
 
+/// Generates code that calls inner_to_bytes for every field and appends the resulting bytes to a vec
+/// called `res`.
+/// This function also modifies any `count` field to match their vec's len()
 fn generate_field_write(fields: &Fields, obj_name: Option<&str>, default_is_le: bool) -> TokenStream {
     let mut overwrite_count_code = quote! {use std::convert::TryInto;};
     let mut dump_fields_code = TokenStream::new();
@@ -117,6 +124,7 @@ fn generate_field_write(fields: &Fields, obj_name: Option<&str>, default_is_le: 
         let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
         let field_ident = generate_field_name(field, idx, obj_name);
 
+        // Generate code that overwrites any `count` field with the vec's len
         if let Some(field_name) = generate_count_field_name(field_attrs.count, fields, obj_name)
         {
             if obj_name.is_none() {
@@ -135,6 +143,7 @@ fn generate_field_write(fields: &Fields, obj_name: Option<&str>, default_is_le: 
             Some(ref e) => is_lower_endian(e),
         };
 
+        // Pick between custom write or default
         let write_call = match field_attrs.writer {
             Some(s) => {
                 quote! {
@@ -152,10 +161,12 @@ fn generate_field_write(fields: &Fields, obj_name: Option<&str>, default_is_le: 
             }
         };
 
+        // Add the generated code for this field
         dump_fields_code.extend(quote! {
             res.append(&mut #write_call?);
         })
     }
+
     quote! {
         #overwrite_count_code
         #dump_fields_code
