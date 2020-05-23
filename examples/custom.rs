@@ -1,7 +1,6 @@
 use simple_parse::{SpError, SpRead, SpWrite};
 
 #[derive(SpRead, SpWrite, Debug)]
-#[sp(id_type = "u8")]
 pub enum Message {
     #[sp(id = "1")]
     ServerHello {
@@ -19,7 +18,7 @@ pub enum Message {
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let msg_stream: &[u8] = &[
         0x01, // ServerHello
-        'H' as _, 'i' as _, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // server_name
+        'H' as _, 'i' as _, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // banner
         0x02, // ClientLogin
         'E' as _, 'l' as _, 'a' as _, 's' as _, 't' as _, '0' as _, 'n' as _,
         'y' as _, // username
@@ -47,7 +46,6 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 // Parses utf8 characters up to a null terminator or num_bytes
 fn string_read(input: &[u8], num_bytes: usize) -> Result<(&[u8], String), SpError> {
-    
     // Makes sure theres at least num_bytes
     if input.len() < num_bytes {
         return Err(SpError::NotEnoughBytes);

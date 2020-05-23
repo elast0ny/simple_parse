@@ -141,9 +141,23 @@ fn generate_field_read(fields: &Fields, default_is_le: bool) -> (Vec<TokenStream
         let field_ident = generate_field_name(field, idx, None);
         idents.push(field_ident.clone());
         let field_type = &field.ty;
+        let type_str = quote! {#field_type}.to_string();
+
         let count_field = match generate_count_field_name(field_attrs.count, fields, None) {
-            None => quote! {None},
-            Some(field) => quote! {Some(#field as _)},
+            None => {
+                if type_str.starts_with("Vec") {
+                    panic!("Vec fields must have the `count` attribute");
+                }
+                quote! {
+                    None
+                }
+            }
+            Some(field) => {
+                if !type_str.starts_with("Vec") {
+                    panic!("Only Vec fields can have the `count` attribute");
+                }
+                quote! {Some(#field as _)}
+            }
         };
         let is_input_le = match field_attrs.endian {
             None => default_is_le,

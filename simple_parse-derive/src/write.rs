@@ -68,9 +68,8 @@ fn generate_struct_write(data: &DataStruct, attrs: StructAttributes) -> TokenStr
 /// Generates the code that matches the current enum variant and dumps bytes
 /// for each of its fields
 fn generate_enum_write(data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
-    
     let var_id_type = match attrs.id_type {
-        None => quote!{u8},
+        None => quote! {u8},
         Some(t) => t.parse().unwrap(),
     };
 
@@ -93,10 +92,10 @@ fn generate_enum_write(data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
         let variant_name = &variant.ident;
         let variant_id =
             syn::LitInt::new(&var_attrs.id.to_string(), proc_macro2::Span::call_site());
-        
+
         let field_list = generate_field_list(&variant.fields, None);
         let field_write_code = generate_field_write(&variant.fields, None, default_is_le);
-        
+
         variant_code_gen.extend(quote! {
             Self::#variant_name#field_list => {
                 let mut var_id: #var_id_type = #variant_id;
@@ -116,19 +115,27 @@ fn generate_enum_write(data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
 /// Generates code that calls inner_to_bytes for every field and appends the resulting bytes to a vec
 /// called `res`.
 /// This function also modifies any `count` field to match their vec's len()
-fn generate_field_write(fields: &Fields, obj_name: Option<&str>, default_is_le: bool) -> TokenStream {
+fn generate_field_write(
+    fields: &Fields,
+    obj_name: Option<&str>,
+    default_is_le: bool,
+) -> TokenStream {
     let mut overwrite_count_code = quote! {use std::convert::TryInto;};
     let mut dump_fields_code = TokenStream::new();
 
     for (idx, field) in fields.iter().enumerate() {
         let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
         let field_ident = generate_field_name(field, idx, obj_name);
-
+        let field_type = &field.ty;
+        let type_str = quote! {#field_type}.to_string();
         // Generate code that overwrites any `count` field with the vec's len
-        if let Some(field_name) = generate_count_field_name(field_attrs.count, fields, obj_name)
-        {
+        if let Some(field_name) = generate_count_field_name(field_attrs.count, fields, obj_name) {
+            if !type_str.starts_with("Vec") {
+                panic!("Only Vec fields can have the `count` attribute");
+            }
+
             if obj_name.is_none() {
-                overwrite_count_code.extend(quote!{*});
+                overwrite_count_code.extend(quote! {*});
             }
             overwrite_count_code.extend(quote! {
                 #field_name = match #field_ident.len().try_into() {
@@ -136,7 +143,11 @@ fn generate_field_write(fields: &Fields, obj_name: Option<&str>, default_is_le: 
                     Err(e) => return Err(simple_parse::SpError::CountFieldOverflow),
                 };
             })
-        };
+        } else {
+            if type_str.starts_with("Vec") {
+                panic!("Vec fields must have the `count` attribute");
+            }
+        }
 
         let is_input_le = match field_attrs.endian {
             None => default_is_le,

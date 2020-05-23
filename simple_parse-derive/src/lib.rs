@@ -135,7 +135,7 @@ pub(crate) fn generate_count_field_name(
         Some(s) => s,
     };
 
-    let name = match fields {
+    match fields {
         Fields::Unit => None,
         Fields::Named(_) => {
             let obj_name = if let Some(name) = obj_name {
@@ -159,9 +159,7 @@ pub(crate) fn generate_count_field_name(
             };
             Some(obj_name.parse().unwrap())
         }
-    };
-
-    name
+    }
 }
 
 /// Returns whether the string is set to "little"
