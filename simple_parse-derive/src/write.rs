@@ -52,7 +52,7 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 fn generate_struct_write(data: &DataStruct, attrs: StructAttributes) -> TokenStream {
     let default_is_le: bool = match attrs.endian {
         None => {
-            if cfg!(target_endian = "litte") {
+            if cfg!(target_endian = "little") {
                 true
             } else {
                 false

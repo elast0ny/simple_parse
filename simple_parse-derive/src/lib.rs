@@ -166,7 +166,7 @@ pub(crate) fn generate_count_field_name(
 
 /// Returns whether the string is set to "little"
 pub(crate) fn is_lower_endian(val: &str) -> bool {
-    if val == "litte" {
+    if val == "little" {
         true
     } else if val == "big" {
         false
