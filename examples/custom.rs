@@ -33,8 +33,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (_rest, mut msg) = Message::from_bytes(rest)?;
     println!("{:X?}", msg);
 
-    msg.to_bytes(&mut dst)?;
-    println!("{:X?}", dst);
+    let len = msg.to_bytes(&mut dst)?;
+    println!("{} bytes : {:X?}", len, dst);
     dst.clear();
 
     if let Message::ClientLogin {
@@ -45,8 +45,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!("{:X?}", msg);
 
-    msg.to_bytes(&mut dst)?;
-    println!("{:X?}", dst);
+    let len = msg.to_bytes(&mut dst)?;
+    println!("{} bytes : {:X?}", len, dst);
 
     Ok(())
 }
@@ -79,7 +79,7 @@ fn string_read(input: &[u8], num_bytes: usize) -> Result<(&[u8], String), SpErro
 
 // Converts a string into bytes writing up to num_bytes. If the string
 // is shorter, it is padded with null terminators
-fn string_write(s: &String, num_bytes: usize, dst: &mut Vec<u8>) -> Result<(), SpError> {
+fn string_write(s: &String, num_bytes: usize, dst: &mut Vec<u8>) -> Result<usize, SpError> {
     let mut bytes = s.clone().into_bytes();
 
     // Make sure string is exactly num_bytes
@@ -87,5 +87,5 @@ fn string_write(s: &String, num_bytes: usize, dst: &mut Vec<u8>) -> Result<(), S
 
     dst.append(&mut bytes);
 
-    Ok(())
+    Ok(num_bytes)
 }

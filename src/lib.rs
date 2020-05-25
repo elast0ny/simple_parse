@@ -18,12 +18,12 @@ pub trait SpRead {
 }
 
 pub trait SpWrite {
-    fn inner_to_bytes(&mut self, is_output_le: bool, dst: &mut Vec<u8>) -> Result<(), crate::SpError>;
+    fn inner_to_bytes(&mut self, is_output_le: bool, dst: &mut Vec<u8>) -> Result<usize, crate::SpError>;
 
     /// Convert the current contents of the struct to bytes.
     /// This function potentially changes the content of self and
     /// can fail.
-    fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<(), crate::SpError>;
+    fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError>;
 }
 
 macro_rules! ImplSpTraits {
@@ -71,18 +71,21 @@ macro_rules! ImplSpTraits {
         }
 
         impl SpWrite for $typ {
-            fn inner_to_bytes(&mut self, is_output_le: bool, dst: &mut Vec<u8>) -> Result<(), crate::SpError> {
+            fn inner_to_bytes(&mut self, is_output_le: bool, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
                 let value = if is_output_le {
                     self.to_le_bytes()
                 } else {
                     self.to_be_bytes()
                 };
 
-                dst.extend(value.as_ref());
-                Ok(())
+                let bytes = value.as_ref();
+
+
+                dst.extend(bytes);
+                Ok(bytes.len())
             }
 
-            fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<(), crate::SpError> {
+            fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
                 self.inner_to_bytes(true, dst)
             }
         }
@@ -138,13 +141,14 @@ impl<T: SpRead> SpRead for Vec<T> {
 }
 
 impl<T: SpWrite> SpWrite for Vec<T> {
-    fn inner_to_bytes(&mut self, is_output_le: bool, dst: &mut Vec<u8>) -> Result<(), crate::SpError> {
+    fn inner_to_bytes(&mut self, is_output_le: bool, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+        let mut total_sz = 0;
         for tmp in self.iter_mut() {
-            tmp.inner_to_bytes(is_output_le, dst)?;
+            total_sz += tmp.inner_to_bytes(is_output_le, dst)?;
         }
-        Ok(())
+        Ok(total_sz)
     }
-    fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<(), crate::SpError> {
+    fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 }

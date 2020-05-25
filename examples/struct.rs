@@ -23,16 +23,16 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{:X?}", s);
 
     // Dump struct as bytes
-    s.to_bytes(&mut dst)?;
-    println!("{:X?}", dst);
+    let len = s.to_bytes(&mut dst)?;
+    println!("{} bytes : {:X?}", len, dst);
 
     assert_eq!(&dst, &data);
     dst.clear();
 
     // Add field and dump again
     s.dwords.push(0xDDEEFFFF);
-    s.to_bytes(&mut dst)?;
-    println!("{:X?}", dst);
+    let len = s.to_bytes(&mut dst)?;
+    println!("{} bytes : {:X?}", len, dst);
     assert_eq!(
         &dst,
         &[

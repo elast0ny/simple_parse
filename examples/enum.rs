@@ -37,8 +37,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (rest, mut msg) = Message::from_bytes(rest)?;
     println!("{:X?}", msg);
-    msg.to_bytes(&mut dst)?;
-    println!("{:X?}", dst);
+    let len = msg.to_bytes(&mut dst)?;
+    println!("{} bytes : {:X?}", len, dst);
+
     dst.clear();
 
     let (rest, mut msg) = Message::from_bytes(rest)?;
@@ -53,7 +54,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         panic!("Did not parse as ServerDisconnect !?");
     }
-    msg.to_bytes(&mut dst)?;
+    let len = msg.to_bytes(&mut dst)?;
+    println!("{} bytes : {:X?}", len, dst);
     assert_eq!(
         &dst,
         &[
@@ -71,7 +73,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse last message
     let (rest, mut msg) = Message::from_bytes(rest)?;
     println!("{:X?}", msg);
-    msg.to_bytes(&mut dst)?;
+    
+    let len = msg.to_bytes(&mut dst)?;
+    println!("{} bytes : {:X?}", len, dst);
     assert_eq!(&dst, &[0x02]);
     println!("{:X?}", dst);
 
