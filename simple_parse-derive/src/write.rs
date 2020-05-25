@@ -164,7 +164,7 @@ fn generate_field_write(
                 }
                 quote! {
                     {
-                        let dst = res;
+                        let dst: &mut Vec<u8> = res;
                         let input = #ref_mut #field_ident;
                         let is_input_le = #is_input_le;
                         #s
