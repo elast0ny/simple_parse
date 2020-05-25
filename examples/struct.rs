@@ -9,6 +9,7 @@ pub struct SomeStruct {
 }
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut dst = Vec::new();
     let data: &[u8] = &[
         0x12, //some_field
         0x03, 0x00, //num_dwords
@@ -22,18 +23,18 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{:X?}", s);
 
     // Dump struct as bytes
-    let generated_bytes = s.to_bytes()?;
-    println!("{:X?}", generated_bytes);
+    s.to_bytes(&mut dst)?;
+    println!("{:X?}", dst);
 
-    assert_eq!(generated_bytes, data);
+    assert_eq!(&dst, &data);
+    dst.clear();
 
     // Add field and dump again
     s.dwords.push(0xDDEEFFFF);
-    let generated_bytes = s.to_bytes()?;
-    println!("{:X?}", generated_bytes);
-
+    s.to_bytes(&mut dst)?;
+    println!("{:X?}", dst);
     assert_eq!(
-        generated_bytes,
+        &dst,
         &[
             0x12, //some_field
             0x04, 0x00, //num_dwords
@@ -43,6 +44,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             0xDD, 0xEE, 0xFF, 0xFF, //dword[3]
         ]
     );
+    dst.clear();
 
     Ok(())
 }

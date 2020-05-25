@@ -32,12 +32,14 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         0x02, // ClientLogin
     ];
 
+    let mut dst = Vec::new();
     let rest = msg_stream;
 
     let (rest, mut msg) = Message::from_bytes(rest)?;
     println!("{:X?}", msg);
-    let generated_bytes = msg.to_bytes()?;
-    println!("{:X?}", generated_bytes);
+    msg.to_bytes(&mut dst)?;
+    println!("{:X?}", dst);
+    dst.clear();
 
     let (rest, mut msg) = Message::from_bytes(rest)?;
     println!("{:X?}", msg);
@@ -51,9 +53,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         panic!("Did not parse as ServerDisconnect !?");
     }
-    let generated_bytes = msg.to_bytes()?;
+    msg.to_bytes(&mut dst)?;
     assert_eq!(
-        generated_bytes,
+        &dst,
         &[
             0x03, // ServerDisconnect
             0xDE, 0xAD, 0xBE, 0xEF, //ServerDisconnect.timestamp
@@ -63,14 +65,15 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             0x12, //ServerDisconnect.option[2]
         ]
     );
-    println!("{:X?}", generated_bytes);
+    println!("{:X?}", dst);
+    dst.clear();
 
     // Parse last message
     let (rest, mut msg) = Message::from_bytes(rest)?;
     println!("{:X?}", msg);
-    let generated_bytes = msg.to_bytes()?;
-    assert_eq!(generated_bytes, &[0x02]);
-    println!("{:X?}", generated_bytes);
+    msg.to_bytes(&mut dst)?;
+    assert_eq!(&dst, &[0x02]);
+    println!("{:X?}", dst);
 
     if let Err(SpError::NotEnoughBytes) = Message::from_bytes(rest) {
         println!("Done !");

@@ -30,17 +30,15 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     let expanded = quote! {
         impl #impl_generics simple_parse::SpWrite for #name #ty_generics #where_clause {
-            fn to_bytes(&mut self) -> Result<Vec<u8>, simple_parse::SpError> {
-                self.inner_to_bytes(true)
+            fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<(), simple_parse::SpError> {
+                self.inner_to_bytes(true, dst)
             }
             fn inner_to_bytes(
                 &mut self,
-                is_output_le: bool,
-            ) -> Result<Vec<u8>, simple_parse::SpError>
+                is_output_le: bool, res: &mut Vec<u8>) -> Result<(), simple_parse::SpError>
             {
-                let mut res = Vec::new();
                 #generated_code
-                Ok(res)
+                Ok(())
             }
         }
     };
@@ -99,7 +97,7 @@ fn generate_enum_write(data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
         variant_code_gen.extend(quote! {
             Self::#variant_name#field_list => {
                 let mut var_id: #var_id_type = #variant_id;
-                res.append(&mut var_id.inner_to_bytes(#default_is_le)?);
+                var_id.inner_to_bytes(#default_is_le, res)?;
                 #field_write_code
             },
         });
@@ -158,7 +156,7 @@ fn generate_field_write(
         let write_call = match field_attrs.writer {
             Some(s) => {
                 let s: TokenStream = s.parse().unwrap();
-                let mut ref_mut = quote!{};
+                let mut ref_mut = quote! {};
                 if obj_name.is_some() {
                     ref_mut = quote! {
                         &mut
@@ -166,6 +164,7 @@ fn generate_field_write(
                 }
                 quote! {
                     {
+                        let dst = res;
                         let input = #ref_mut #field_ident;
                         let is_input_le = #is_input_le;
                         #s
@@ -174,14 +173,14 @@ fn generate_field_write(
             }
             None => {
                 quote! {
-                    #field_ident.inner_to_bytes(#is_input_le)
+                    #field_ident.inner_to_bytes(#is_input_le, res)
                 }
             }
         };
 
         // Add the generated code for this field
         dump_fields_code.extend(quote! {
-            res.append(&mut #write_call?);
+            #write_call?;
         })
     }
 

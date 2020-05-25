@@ -4,13 +4,13 @@ use simple_parse::{SpError, SpRead, SpWrite};
 pub enum Message {
     #[sp(id = "1")]
     ServerHello {
-        #[sp(reader = "string_read(input, 8)", writer = "string_write(input, 8)")]
+        #[sp(reader = "string_read(input, 8)", writer = "string_write(input, 8, dst)")]
         banner: String,
     },
 
     #[sp(id = "2")]
     ClientLogin {
-        #[sp(reader = "string_read(input, 8)", writer = "string_write(input, 8)")]
+        #[sp(reader = "string_read(input, 8)", writer = "string_write(input, 8, dst)")]
         username: String,
     },
 }
@@ -24,6 +24,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         'y' as _, // username
     ];
 
+    let mut dst = Vec::new();
     let rest = msg_stream;
 
     let (rest, msg) = Message::from_bytes(rest)?;
@@ -31,7 +32,11 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (_rest, mut msg) = Message::from_bytes(rest)?;
     println!("{:X?}", msg);
-    println!("{:X?}", msg.to_bytes()?);
+
+    msg.to_bytes(&mut dst)?;
+    println!("{:X?}", dst);
+    dst.clear();
+
     if let Message::ClientLogin {
         ref mut username, ..
     } = msg
@@ -39,7 +44,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         *username = String::from("H4ck3r");
     }
     println!("{:X?}", msg);
-    println!("{:X?}", msg.to_bytes()?);
+
+    msg.to_bytes(&mut dst)?;
+    println!("{:X?}", dst);
 
     Ok(())
 }
@@ -72,11 +79,13 @@ fn string_read(input: &[u8], num_bytes: usize) -> Result<(&[u8], String), SpErro
 
 // Converts a string into bytes writing up to num_bytes. If the string
 // is shorter, it is padded with null terminators
-fn string_write(s: &String, num_bytes: usize) -> Result<Vec<u8>, SpError> {
+fn string_write(s: &String, num_bytes: usize, dst: &mut Vec<u8>) -> Result<(), SpError> {
     let mut bytes = s.clone().into_bytes();
 
     // Make sure string is exactly num_bytes
     bytes.resize(num_bytes, 0x00);
 
-    Ok(bytes)
+    dst.append(&mut bytes);
+
+    Ok(())
 }
