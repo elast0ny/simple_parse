@@ -152,3 +152,34 @@ impl<T: SpWrite> SpWrite for Vec<T> {
         self.inner_to_bytes(true, dst)
     }
 }
+
+impl<T: SpRead> SpRead for *mut T {
+    fn inner_from_bytes(
+        input: &[u8],
+        is_input_le: bool,
+        count: Option<usize>,
+    ) -> Result<(&[u8], Self), crate::SpError>
+    where
+        Self: Sized,
+    {
+        let (rest, res) = usize::inner_from_bytes(input, is_input_le, count)?;
+        Ok((rest, res as *mut T))
+    }
+
+    fn from_bytes(input: &[u8]) -> Result<(&[u8], Self), crate::SpError>
+    where
+        Self: Sized,
+    {
+        Self::inner_from_bytes(input, true, None)
+    }
+}
+
+impl<T: SpWrite> SpWrite for *mut T {
+    fn inner_to_bytes(&mut self, is_output_le: bool, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+        let mut val = *self as usize;
+        val.inner_to_bytes(is_output_le, dst)
+    }
+    fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+        self.inner_to_bytes(true, dst)
+    }
+}
