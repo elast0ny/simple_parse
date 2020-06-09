@@ -142,7 +142,7 @@ pub(crate) fn generate_count_field_name(
                 format!("{}.{}", name, count_val)
             //Ident::new(&format!("{}.{}", name, count_val),proc_macro2::Span::call_site())
             } else {
-                format!("{}", count_val)
+                count_val
                 //Ident::new(&format!("{}", count_val), proc_macro2::Span::call_site())
             };
 

@@ -4,13 +4,19 @@ use simple_parse::{SpError, SpRead, SpWrite};
 pub enum Message {
     #[sp(id = "1")]
     ServerHello {
-        #[sp(reader = "string_read(input, 8)", writer = "string_write(input, 8, dst)")]
+        #[sp(
+            reader = "string_read(input, 8)",
+            writer = "string_write(input, 8, dst)"
+        )]
         banner: String,
     },
 
     #[sp(id = "2")]
     ClientLogin {
-        #[sp(reader = "string_read(input, 8)", writer = "string_write(input, 8, dst)")]
+        #[sp(
+            reader = "string_read(input, 8)",
+            writer = "string_write(input, 8, dst)"
+        )]
         username: String,
     },
 }
@@ -18,10 +24,9 @@ pub enum Message {
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let msg_stream: &[u8] = &[
         0x01, // ServerHello
-        'H' as _, 'i' as _, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // banner
+        b'H', b'i', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // banner
         0x02, // ClientLogin
-        'E' as _, 'l' as _, 'a' as _, 's' as _, 't' as _, '0' as _, 'n' as _,
-        'y' as _, // username
+        b'E', b'l', b'a', b's', b't', b'0', b'n', b'y', // username
     ];
 
     let mut dst = Vec::new();
@@ -79,8 +84,8 @@ fn string_read(input: &[u8], num_bytes: usize) -> Result<(&[u8], String), SpErro
 
 // Converts a string into bytes writing up to num_bytes. If the string
 // is shorter, it is padded with null terminators
-fn string_write(s: &String, num_bytes: usize, dst: &mut Vec<u8>) -> Result<usize, SpError> {
-    let mut bytes = s.clone().into_bytes();
+fn string_write(s: &str, num_bytes: usize, dst: &mut Vec<u8>) -> Result<usize, SpError> {
+    let mut bytes = s.to_string().into_bytes();
 
     // Make sure string is exactly num_bytes
     bytes.resize(num_bytes, 0x00);

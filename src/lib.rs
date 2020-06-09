@@ -18,7 +18,11 @@ pub trait SpRead {
 }
 
 pub trait SpWrite {
-    fn inner_to_bytes(&mut self, is_output_le: bool, dst: &mut Vec<u8>) -> Result<usize, crate::SpError>;
+    fn inner_to_bytes(
+        &mut self,
+        is_output_le: bool,
+        dst: &mut Vec<u8>,
+    ) -> Result<usize, crate::SpError>;
 
     /// Convert the current contents of the struct to bytes.
     /// This function potentially changes the content of self and
@@ -71,7 +75,11 @@ macro_rules! ImplSpTraits {
         }
 
         impl SpWrite for $typ {
-            fn inner_to_bytes(&mut self, is_output_le: bool, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+            fn inner_to_bytes(
+                &mut self,
+                is_output_le: bool,
+                dst: &mut Vec<u8>,
+            ) -> Result<usize, crate::SpError> {
                 let value = if is_output_le {
                     self.to_le_bytes()
                 } else {
@@ -79,7 +87,6 @@ macro_rules! ImplSpTraits {
                 };
 
                 let bytes = value.as_ref();
-
 
                 dst.extend(bytes);
                 Ok(bytes.len())
@@ -141,7 +148,11 @@ impl<T: SpRead> SpRead for Vec<T> {
 }
 
 impl<T: SpWrite> SpWrite for Vec<T> {
-    fn inner_to_bytes(&mut self, is_output_le: bool, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+    fn inner_to_bytes(
+        &mut self,
+        is_output_le: bool,
+        dst: &mut Vec<u8>,
+    ) -> Result<usize, crate::SpError> {
         let mut total_sz = 0;
         for tmp in self.iter_mut() {
             total_sz += tmp.inner_to_bytes(is_output_le, dst)?;
@@ -175,7 +186,11 @@ impl<T: SpRead> SpRead for *mut T {
 }
 
 impl<T: SpWrite> SpWrite for *mut T {
-    fn inner_to_bytes(&mut self, is_output_le: bool, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+    fn inner_to_bytes(
+        &mut self,
+        is_output_le: bool,
+        dst: &mut Vec<u8>,
+    ) -> Result<usize, crate::SpError> {
         let mut val = *self as usize;
         val.inner_to_bytes(is_output_le, dst)
     }

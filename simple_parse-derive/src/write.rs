@@ -51,13 +51,7 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// Generates the code that dumps each field of the struct into the Vec<u8>
 fn generate_struct_write(data: &DataStruct, attrs: StructAttributes) -> TokenStream {
     let default_is_le: bool = match attrs.endian {
-        None => {
-            if cfg!(target_endian = "little") {
-                true
-            } else {
-                false
-            }
-        }
+        None => cfg!(target_endian = "little"),
         Some(ref e) => is_lower_endian(e),
     };
 
@@ -73,13 +67,7 @@ fn generate_enum_write(data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
     };
 
     let default_is_le: bool = match attrs.endian {
-        None => {
-            if cfg!(target_endian = "little") {
-                true
-            } else {
-                false
-            }
-        }
+        None => cfg!(target_endian = "little"),
         Some(ref e) => is_lower_endian(e),
     };
 
@@ -142,10 +130,8 @@ fn generate_field_write(
                     Err(e) => return Err(simple_parse::SpError::CountFieldOverflow),
                 };
             })
-        } else {
-            if type_str.starts_with("Vec") {
-                panic!("Vec fields must have the `count` attribute");
-            }
+        } else if type_str.starts_with("Vec") { 
+            panic!("Vec fields must have the `count` attribute");
         }
 
         let is_input_le = match field_attrs.endian {
@@ -157,12 +143,14 @@ fn generate_field_write(
         let write_call = match field_attrs.writer {
             Some(s) => {
                 let s: TokenStream = s.parse().unwrap();
-                let mut ref_mut = quote! {};
+                let ref_mut = 
                 if obj_name.is_some() {
-                    ref_mut = quote! {
+                    quote! {
                         &mut
-                    };
-                }
+                    }
+                } else {
+                    quote! {}
+                };
                 quote! {
                     {
                         let dst: &mut Vec<u8> = res;

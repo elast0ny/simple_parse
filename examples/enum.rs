@@ -73,7 +73,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse last message
     let (rest, mut msg) = Message::from_bytes(rest)?;
     println!("{:X?}", msg);
-    
+
     let len = msg.to_bytes(&mut dst)?;
     println!("{} bytes : {:X?}", len, dst);
     assert_eq!(&dst, &[0x02]);
