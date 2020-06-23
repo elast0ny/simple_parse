@@ -1,7 +1,10 @@
 # simple_parse
 
-This crate is essentially a copy paste from [deku](https://github.com/sharksforarms/deku) with the bit level precision removed.
+[![crates.io](https://img.shields.io/crates/v/simple_parse.svg)](https://crates.io/crates/simple_parse)
+[![mio](https://docs.rs/simple_parse/badge.svg)](https://docs.rs/simple_parse/)
+![Lines of Code](https://tokei.rs/b1/github/elast0ny/simple_parse)
 
+This crate is heavily based of [deku](https://github.com/sharksforarms/deku) with the bit level precision removed.
 
 ## Usage
 
