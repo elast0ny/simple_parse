@@ -1,9 +1,9 @@
 use simple_parse::{SpRead, SpWrite};
 
 #[derive(Debug, SpRead, SpWrite)]
-pub struct SomeStruct {
+pub struct SomeStruct<'b> {
     some_field: u8,
-    some_string: String,
+    some_string: &'b str,
     num_dwords: u16,
     #[sp(count = "num_dwords", endian = "big")]
     dwords: Vec<u32>,
@@ -11,9 +11,9 @@ pub struct SomeStruct {
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut dst = Vec::new();
-    let data: &[u8] = &[
+    let data: Vec<u8> = vec![
         0x12, //some_field
-        0x02, 0x00, 0x00, 0x00, // string length
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // string.len()
         b'A', b'B',
         0x03, 0x00, //num_dwords
         0x11, 0x22, 0x33, 0x44, //dword[0]
@@ -22,7 +22,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     // Parse the arbitrary bytes into our struct
-    let (_, mut s) = SomeStruct::from_bytes(data)?;
+    let (_, mut s) = SomeStruct::from_bytes(&data)?;
     println!("{:X?}", s);
 
     // Dump struct as bytes
@@ -40,7 +40,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         &dst,
         &[
             0x12, //some_field
-            0x02, 0x00, 0x00, 0x00, // string length
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // string.len()
             b'A', b'B',
             0x04, 0x00, //num_dwords
             0x11, 0x22, 0x33, 0x44, //dword[0]

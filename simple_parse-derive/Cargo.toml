@@ -1,6 +1,6 @@
 [package]
 name = "simple_parse_derive"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["ElasT0ny <elast0ny00@gmail.com>"]
 edition = "2018"
 description = "A macro derive crate that allows conversion between arbitrary bytes into Rust types and vice-versa"

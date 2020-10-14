@@ -25,21 +25,31 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     };
 
     let name = input.ident;
-    let generics = add_trait_bounds(input.generics, parse_quote! {simple_parse::SpRead});
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let mut lifetime = quote!{'_i};
+    let generics = add_trait_bounds(input.generics, parse_quote!{simple_parse::SpRead});
 
+    // Use the first lifetime parameter as the one bound to the input bytes
+    if let Some(lt) = generics.lifetimes().next() {   
+        lifetime = quote!{#lt};
+    }
+    
+    let (_impl_generics, ty_generics, _where_clause) = generics.split_for_impl();
+    
     let expanded = quote! {
-        impl #impl_generics simple_parse::SpRead for #name #ty_generics #where_clause {
-            fn from_bytes(input: &[u8]) -> Result<(&[u8], Self), simple_parse::SpError> {
+        impl<#lifetime> simple_parse::SpRead<#lifetime> for #name #ty_generics {
+            fn from_bytes(input: &#lifetime [u8]) -> Result<(&#lifetime [u8], Self), simple_parse::SpError>
+            where
+            Self: #lifetime + Sized
+            {
                 Self::inner_from_bytes(input, true, None)
             }
             fn inner_from_bytes(
-                input: &[u8],
+                input: &#lifetime  [u8],
                 is_input_le: bool,
                 count: Option<usize>,
-            ) -> Result<(&[u8], Self), simple_parse::SpError>
+            ) -> Result<(&#lifetime [u8], Self), simple_parse::SpError>
             where
-                Self: Sized
+                Self: #lifetime + Sized
             {
                 #generated_read
             }

@@ -14,15 +14,18 @@ use simple_parse::{SpRead, SpWrite};
 #[derive(Debug, SpRead, SpWrite)]
 pub struct SomeStruct {
     some_field: u8,
-    num_dwords: u16,
-    #[sp(count="num_dwords", endian="big")]
-    dwords: Vec<u32>,
+    num_items: u16,
+    #[sp(count="num_items", endian="big")]
+    items: Vec<u32>,
 }
 
 /// <...>
 
+// Parse arbitrary byte buffer into our struct
 let (rest, mut res) = SomeStruct::from_bytes(byte_slice)?;
+/// Modify the struct
 res.dwords.push(0x12345678);
+/// Dump modified struct into Vec<u8>
 let generated_bytes = res.to_bytes()?;
 
 ```
