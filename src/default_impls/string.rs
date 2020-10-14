@@ -43,7 +43,7 @@ impl<'b> SpRead<'b> for String {
 
 impl SpWrite for String {
     fn inner_to_bytes(
-        &mut self,
+        &self,
         is_output_le: bool,
         dst: &mut Vec<u8>,
     ) -> Result<usize, crate::SpError> {
@@ -57,7 +57,7 @@ impl SpWrite for String {
 
         Ok(total_sz)
     }
-    fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 
@@ -107,7 +107,7 @@ impl<'b> SpRead<'b> for &'b str {
 
 impl SpWrite for &str {
     fn inner_to_bytes(
-        &mut self,
+        &self,
         is_output_le: bool,
         dst: &mut Vec<u8>,
     ) -> Result<usize, crate::SpError> {
@@ -121,7 +121,7 @@ impl SpWrite for &str {
 
         Ok(total_sz)
     }
-    fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 }

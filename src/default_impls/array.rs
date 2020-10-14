@@ -37,17 +37,17 @@ impl<'b, T: SpRead<'b>> SpRead<'b> for Vec<T> {
 
 impl<T: SpWrite> SpWrite for Vec<T> {
     fn inner_to_bytes(
-        &mut self,
+        &self,
         is_output_le: bool,
         dst: &mut Vec<u8>,
     ) -> Result<usize, crate::SpError> {
         let mut total_sz = 0;
-        for tmp in self.iter_mut() {
+        for tmp in self.iter() {
             total_sz += tmp.inner_to_bytes(is_output_le, dst)?;
         }
         Ok(total_sz)
     }
-    fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 }
@@ -87,18 +87,17 @@ impl<'b, T: 'b + SpRead<'b>> SpRead<'b> for &[T] {
 
 impl<T: SpWrite> SpWrite for &[T] {
     fn inner_to_bytes(
-        &mut self,
+        &self,
         is_output_le: bool,
         dst: &mut Vec<u8>,
     ) -> Result<usize, crate::SpError> {
-        let tmp_mut = unsafe {std::slice::from_raw_parts_mut(self.as_ptr() as *mut T, self.len())};
         let mut total_sz = 0;
-        for tmp in tmp_mut.iter_mut() {
+        for tmp in self.iter() {
             total_sz += tmp.inner_to_bytes(is_output_le, dst)?;
         }
         Ok(total_sz)
     }
-    fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 }

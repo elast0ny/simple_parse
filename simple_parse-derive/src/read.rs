@@ -7,18 +7,22 @@ use crate::*;
 
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-
+    let generated_read;
+    let generated_read_ref;
+    
     // Generate the code that implements the read()
-    let generated_read = match input.data {
+    match input.data {
         // Parse as a struct
         Data::Struct(ref contents) => {
             let attrs = FromDeriveInput::from_derive_input(&input).unwrap();
-            generate_struct_read(contents, attrs)
+            generated_read = generate_struct_read(&input, contents, &attrs, false);
+            generated_read_ref = generate_struct_read(&input, contents, &attrs, true);
         }
         // Parse as enum
         Data::Enum(ref contents) => {
             let attrs = FromDeriveInput::from_derive_input(&input).unwrap();
-            generate_enum_read(contents, attrs)
+            generated_read = generate_enum_read(&input, contents, &attrs, false);
+            generated_read_ref = generate_enum_read(&input, contents, &attrs, true);
         }
         // Unhandled derive usage
         _ => unimplemented!("Cannot derive on this type"),
@@ -35,23 +39,43 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     
     let (_impl_generics, ty_generics, _where_clause) = generics.split_for_impl();
     
+    // Generate impl block for TYPE and &TYPE
     let expanded = quote! {
         impl<#lifetime> simple_parse::SpRead<#lifetime> for #name #ty_generics {
-            fn from_bytes(input: &#lifetime [u8]) -> Result<(&#lifetime [u8], Self), simple_parse::SpError>
+            fn from_bytes(input: &#lifetime [u8]) -> std::result::Result<(&#lifetime [u8], Self), simple_parse::SpError>
             where
             Self: #lifetime + Sized
             {
-                Self::inner_from_bytes(input, true, None)
+                <#name>::inner_from_bytes(input, true, None)
             }
             fn inner_from_bytes(
                 input: &#lifetime  [u8],
                 is_input_le: bool,
                 count: Option<usize>,
-            ) -> Result<(&#lifetime [u8], Self), simple_parse::SpError>
+            ) -> std::result::Result<(&#lifetime [u8], #name), simple_parse::SpError>
             where
                 Self: #lifetime + Sized
             {
                 #generated_read
+            }
+        }
+
+        impl<#lifetime> simple_parse::SpRead<#lifetime> for &#name #ty_generics {
+            fn from_bytes(input: &#lifetime [u8]) -> std::result::Result<(&#lifetime [u8], Self), simple_parse::SpError>
+            where
+            Self: #lifetime + Sized
+            {
+                <&#name>::inner_from_bytes(input, true, None)
+            }
+            fn inner_from_bytes(
+                input: &#lifetime  [u8],
+                is_input_le: bool,
+                count: Option<usize>,
+            ) -> std::result::Result<(&#lifetime [u8], Self), simple_parse::SpError>
+            where
+                Self: #lifetime + Sized
+            {
+                #generated_read_ref
             }
         }
     };
@@ -61,7 +85,8 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 /// Generates code that parses bytes into a struct
-fn generate_struct_read(data: &DataStruct, attrs: StructAttributes) -> TokenStream {
+fn generate_struct_read(input: &DeriveInput, data: &DataStruct, attrs: &StructAttributes, is_ref: bool) -> TokenStream {
+    let name = &input.ident;
     let default_is_le: bool = match attrs.endian {
         None => {
             cfg!(target_endian = "little")
@@ -72,15 +97,24 @@ fn generate_struct_read(data: &DataStruct, attrs: StructAttributes) -> TokenStre
     let (field_idents, read_code) = generate_field_read(&data.fields, default_is_le);
     let field_list = generate_field_list(&data.fields, Some(&field_idents), None);
 
-    quote! {
-        let mut rest = input.as_ref();
-        #read_code
-        Ok((rest, Self#field_list))
+    if is_ref {
+        quote! {
+            let mut rest = input.as_ref();
+            #read_code
+            Ok((rest, unsafe{&*(input.as_ptr() as *const _ as *const #name)}))
+        }
+    } else {
+        quote! {
+            let mut rest = input.as_ref();
+            #read_code
+            Ok((rest, #name#field_list))
+        }
     }
 }
 
 /// Generates the code that parse bytes into an enum variant
-fn generate_enum_read(data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
+fn generate_enum_read(input: &DeriveInput, data: &DataEnum, attrs: &EnumAttributes, is_ref: bool) -> TokenStream {
+    let name = &input.ident;
     let id_type = syn::Ident::new(
         match attrs.id_type {
             Some(ref s) => s.as_str(),
@@ -106,12 +140,20 @@ fn generate_enum_read(data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
             syn::LitInt::new(&var_attrs.id.to_string(), proc_macro2::Span::call_site());
         let (field_idents, read_code) = generate_field_read(&variant.fields, default_is_le);
         let field_list = generate_field_list(&variant.fields, Some(&field_idents), None);
-        variant_code_gen.extend(quote! {
+        variant_code_gen.extend(if is_ref {
+            quote! {
+                #variant_id => {
+                    #read_code
+                    Ok((rest,  unsafe{&*(input.as_ptr() as *const _ as *const #name)}))
+                },
+            }
+        } else {
+            quote! {
             #variant_id => {
                 #read_code
-                Ok((rest, Self::#variant_name#field_list))
+                Ok((rest,  #name::#variant_name#field_list))
             },
-        });
+        }});
     }
 
     // Add match case to handle unknown IDs

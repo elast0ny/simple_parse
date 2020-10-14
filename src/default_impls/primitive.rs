@@ -46,7 +46,7 @@ macro_rules! ImplSpTraits {
 
         impl SpWrite for $typ {
             fn inner_to_bytes(
-                &mut self,
+                &self,
                 is_output_le: bool,
                 dst: &mut Vec<u8>,
             ) -> Result<usize, crate::SpError> {
@@ -62,7 +62,7 @@ macro_rules! ImplSpTraits {
                 Ok(bytes.len())
             }
 
-            fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+            fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
                 self.inner_to_bytes(true, dst)
             }
         }
@@ -96,15 +96,15 @@ macro_rules! ImplSpTraits {
 
         impl SpWrite for &$typ {
             fn inner_to_bytes(
-                &mut self,
+                &self,
                 is_output_le: bool,
                 dst: &mut Vec<u8>,
             ) -> Result<usize, crate::SpError> {
-                let mut v = **self;
+                let v = **self;
                 v.inner_to_bytes(is_output_le, dst)
             }
 
-            fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+            fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
                 self.inner_to_bytes(true, dst)
             }
         }
@@ -147,14 +147,14 @@ impl<'b, T: SpRead<'b>> SpRead<'b> for *mut T {
 
 impl<T: SpWrite> SpWrite for *mut T {
     fn inner_to_bytes(
-        &mut self,
+        &self,
         is_output_le: bool,
         dst: &mut Vec<u8>,
     ) -> Result<usize, crate::SpError> {
-        let mut val = *self as usize;
+        let val = *self as usize;
         val.inner_to_bytes(is_output_le, dst)
     }
-    fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 }

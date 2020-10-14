@@ -22,7 +22,7 @@ pub trait SpRead<'b> {
 
 pub trait SpWrite {
     fn inner_to_bytes(
-        &mut self,
+        &self,
         is_output_le: bool,
         dst: &mut Vec<u8>,
     ) -> Result<usize, crate::SpError>;
@@ -30,6 +30,6 @@ pub trait SpWrite {
     /// Convert the current contents of the struct to bytes.
     /// This function potentially changes the content of self and
     /// can fail.
-    fn to_bytes(&mut self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError>;
+    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError>;
 }
 
