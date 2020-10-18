@@ -35,7 +35,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut dst = Vec::new();
     let rest = msg_stream;
 
-    let (rest, mut msg) = Message::from_bytes(rest)?;
+    let (rest, msg) = Message::from_bytes(rest)?;
     println!("{:X?}", msg);
     let len = msg.to_bytes(&mut dst)?;
     println!("{} bytes : {:X?}", len, dst);
@@ -71,7 +71,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     dst.clear();
 
     // Parse last message
-    let (rest, mut msg) = Message::from_bytes(rest)?;
+    let (rest, msg) = Message::from_bytes(rest)?;
     println!("{:X?}", msg);
 
     let len = msg.to_bytes(&mut dst)?;

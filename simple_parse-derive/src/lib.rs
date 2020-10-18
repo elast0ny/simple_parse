@@ -1,7 +1,7 @@
 use darling::{FromDeriveInput, FromField, FromVariant};
 use proc_macro::TokenStream;
-use syn::{Field, Fields, GenericParam, Generics};
 use quote::quote;
+use syn::{Field, Fields, GenericParam, Generics};
 
 mod read;
 mod write;
@@ -135,30 +135,32 @@ pub(crate) fn generate_count_field_name(
         Some(s) => s,
     };
 
-    match fields {
-        Fields::Unit => None,
-        Fields::Named(_) => {
-            let obj_name = if let Some(name) = obj_name {
-                format!("{}.{}", name, count_val)
-            //Ident::new(&format!("{}.{}", name, count_val),proc_macro2::Span::call_site())
-            } else {
-                count_val
-                //Ident::new(&format!("{}", count_val), proc_macro2::Span::call_site())
-            };
+    let prefix = if let Some(name) = obj_name {
+        format!("{}.", name)
+    } else {
+        String::new()
+    };
 
-            Some(obj_name.parse().unwrap())
-        }
-        Fields::Unnamed(_) => {
-            let field_idx = count_val.parse::<usize>().unwrap();
-            let obj_name = if let Some(name) = obj_name {
-                format!("{}.{}", name, field_idx)
-            //Ident::new(&format!("{}.{}", name, field_idx),proc_macro2::Span::call_site(),)
+    let mut count_field_name = None;
+    for (idx, field) in fields.iter().enumerate() {
+        let cur_field = match field.ident {
+            Some(ref i) => i.to_string(),
+            None => format!("field_{}", idx),
+        };
+        if cur_field == count_val {
+            let field_type = &field.ty;
+            let field_type = quote! {#field_type}.to_string();
+            count_field_name = Some(if field_type.starts_with('&') {
+                format!("*{}{}", prefix, cur_field)
             } else {
-                format!("field_{}", field_idx)
-                //Ident::new(&format!("field_{}", field_idx),proc_macro2::Span::call_site(),)
-            };
-            Some(obj_name.parse().unwrap())
+                format!("{}{}", prefix, cur_field)
+            });
         }
+    }
+
+    match count_field_name {
+        None => None,
+        Some(f) => Some(f.parse().unwrap()),
     }
 }
 
@@ -173,18 +175,20 @@ pub(crate) fn is_lower_endian(val: &str) -> bool {
     }
 }
 
-
-
 /// Generates the proper code to initialize the object
 /// e.g :
 ///     (field_0, field_1, field_2)
 /// OR
 ///     {some_field, timestamp, secret_key}
-fn generate_field_list(fields: &Fields, field_idents: Option<&Vec<proc_macro2::TokenStream>>, prefix: Option<&str>) -> proc_macro2::TokenStream {
+fn generate_field_list(
+    fields: &Fields,
+    field_idents: Option<&Vec<proc_macro2::TokenStream>>,
+    prefix: Option<&str>,
+) -> proc_macro2::TokenStream {
     let mut tmp;
 
     if let Fields::Unit = fields {
-        return quote!{};
+        return quote! {};
     }
 
     let field_idents = match field_idents {
@@ -202,22 +206,20 @@ fn generate_field_list(fields: &Fields, field_idents: Option<&Vec<proc_macro2::T
         Some(s) => s.parse().unwrap(),
         None => proc_macro2::TokenStream::new(),
     };
-    
     let mut field_list = proc_macro2::TokenStream::new();
     for f in field_idents {
-        field_list.extend(quote!{
+        field_list.extend(quote! {
             #prefix #f,
         });
     }
 
     match fields {
-        Fields::Named(_) => 
-        quote! {
+        Fields::Named(_) => quote! {
             {#field_list}
         },
         Fields::Unnamed(_) => quote! {
             (#field_list)
         },
-        _ => {unreachable!()},
+        _ => unreachable!(),
     }
 }

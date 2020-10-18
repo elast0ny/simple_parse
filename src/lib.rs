@@ -5,19 +5,20 @@ mod default_impls;
 pub use default_impls::*;
 
 pub use simple_parse_derive::*;
-pub trait SpRead<'b> {
+
+pub trait SpRead<'a> {
     fn inner_from_bytes(
-        input: &'b [u8],
+        input: &'a [u8],
         is_input_le: bool,
         count: Option<usize>,
-    ) -> Result<(&'b [u8], Self), crate::SpError>
+    ) -> Result<(&'a [u8], Self), crate::SpError>
     where
-        Self: 'b + Sized;
+        Self: Sized;
 
     /// Convert arbitrary bytes to Self
-    fn from_bytes(input: &'b [u8]) -> Result<(&'b [u8], Self), crate::SpError>
+    fn from_bytes(input: &'a [u8]) -> Result<(&'a [u8], Self), crate::SpError>
     where
-        Self: 'b + Sized;
+        Self: Sized;
 }
 
 pub trait SpWrite {

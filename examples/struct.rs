@@ -1,9 +1,9 @@
 use simple_parse::{SpRead, SpWrite};
 
 #[derive(Debug, SpRead, SpWrite)]
-pub struct SomeStruct<'b> {
+pub struct SomeStruct {
     some_field: u8,
-    some_string: &'b str,
+    some_string: String,
     num_dwords: u16,
     #[sp(count = "num_dwords", endian = "big")]
     dwords: Vec<u32>,

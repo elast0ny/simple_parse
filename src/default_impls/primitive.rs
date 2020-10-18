@@ -2,23 +2,20 @@ use crate::{SpError, SpRead, SpWrite};
 
 macro_rules! ImplSpTraits {
     ($typ:ty) => {
-        impl<'b> SpRead<'b> for $typ {
+        impl<'a> SpRead<'a> for $typ {
             fn inner_from_bytes(
-                input: &'b [u8],
+                input: &'a [u8],
                 is_input_le: bool,
                 _count: Option<usize>,
-            ) -> Result<(&'b [u8], Self), crate::SpError>
+            ) -> Result<(&'a [u8], Self), crate::SpError>
             where
                 Self: Sized,
             {
-                let input = input.as_ref();
                 if input.len() < std::mem::size_of::<$typ>() {
                     return Err(SpError::NotEnoughBytes);
                 }
-                let (typ_bytes, rest) = input.as_ref().split_at(std::mem::size_of::<$typ>());
-                // Safe because we checked the size above
+                let (typ_bytes, rest) = input.split_at(std::mem::size_of::<$typ>());
                 let typ_bytes = unsafe { &*(typ_bytes.as_ptr() as *const $typ) };
-
                 let value = if is_input_le {
                     if cfg!(target_endian = "big") {
                         typ_bytes.swap_bytes()
@@ -32,11 +29,10 @@ macro_rules! ImplSpTraits {
                         *typ_bytes
                     }
                 };
-
                 Ok((rest, value))
             }
 
-            fn from_bytes(input: &'b [u8]) -> Result<(&'b [u8], Self), crate::SpError>
+            fn from_bytes(input: &'a [u8]) -> Result<(&'a [u8], Self), crate::SpError>
             where
                 Self: Sized,
             {
@@ -55,53 +51,9 @@ macro_rules! ImplSpTraits {
                 } else {
                     self.to_be_bytes()
                 };
-
                 let bytes = value.as_ref();
-
                 dst.extend(bytes);
                 Ok(bytes.len())
-            }
-
-            fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
-                self.inner_to_bytes(true, dst)
-            }
-        }
-
-        impl<'b> SpRead<'b> for &$typ {
-            fn inner_from_bytes(
-                input: &'b [u8],
-                _is_input_le: bool,
-                _count: Option<usize>,
-            ) -> Result<(&'b [u8], Self), crate::SpError>
-            where
-                Self: 'b + Sized,
-            {
-                let input = input.as_ref();
-                if input.len() < std::mem::size_of::<$typ>() {
-                    return Err(SpError::NotEnoughBytes);
-                }
-                let value = unsafe{&*(input.as_ptr() as *const $typ)};
-                let (_, rest) = input.as_ref().split_at(std::mem::size_of::<$typ>());
-                
-                Ok((rest, value))
-            }
-
-            fn from_bytes(input: &'b [u8]) -> Result<(&'b [u8], Self), crate::SpError>
-            where
-                Self: 'b + Sized,
-            {
-                Self::inner_from_bytes(input, true, None)
-            }
-        }
-
-        impl SpWrite for &$typ {
-            fn inner_to_bytes(
-                &self,
-                is_output_le: bool,
-                dst: &mut Vec<u8>,
-            ) -> Result<usize, crate::SpError> {
-                let v = **self;
-                v.inner_to_bytes(is_output_le, dst)
             }
 
             fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
@@ -124,22 +76,22 @@ ImplSpTraits!(i64);
 ImplSpTraits!(i128);
 ImplSpTraits!(isize);
 
-impl<'b, T: SpRead<'b>> SpRead<'b> for *mut T {
+impl<'a, T: SpRead<'a>> SpRead<'a> for *mut T {
     fn inner_from_bytes(
-        input: &'b [u8],
+        input: &'a[u8],
         is_input_le: bool,
         count: Option<usize>,
-    ) -> Result<(&'b [u8], Self), crate::SpError>
+    ) -> Result<(&'a[u8], Self), crate::SpError>
     where
-        Self: 'b + Sized,
+        Self: Sized,
     {
         let (rest, res) = usize::inner_from_bytes(input, is_input_le, count)?;
         Ok((rest, res as *mut T))
     }
 
-    fn from_bytes(input: &'b [u8]) -> Result<(&'b [u8], Self), crate::SpError>
+    fn from_bytes(input: &'a[u8]) -> Result<(&'a[u8], Self), crate::SpError>
     where
-        Self: 'b + Sized,
+        Self: Sized,
     {
         Self::inner_from_bytes(input, true, None)
     }
