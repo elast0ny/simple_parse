@@ -2,10 +2,10 @@ use crate::{SpRead, SpWrite};
 
 impl<'a, T: SpRead<'a>> SpRead<'a> for Vec<T> {
     fn inner_from_bytes(
-        input: &'a[u8],
+        input: &'a [u8],
         is_input_le: bool,
         count: Option<usize>,
-    ) -> Result<(&'a[u8], Self), crate::SpError>
+    ) -> Result<(&'a [u8], Self), crate::SpError>
     where
         Self: Sized,
     {
@@ -27,7 +27,7 @@ impl<'a, T: SpRead<'a>> SpRead<'a> for Vec<T> {
         Ok((rest, res))
     }
 
-    fn from_bytes(input: &'a[u8]) -> Result<(&'a[u8], Self), crate::SpError>
+    fn from_bytes(input: &'a [u8]) -> Result<(&'a [u8], Self), crate::SpError>
     where
         Self: Sized,
     {

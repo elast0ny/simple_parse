@@ -78,10 +78,10 @@ ImplSpTraits!(isize);
 
 impl<'a, T: SpRead<'a>> SpRead<'a> for *mut T {
     fn inner_from_bytes(
-        input: &'a[u8],
+        input: &'a [u8],
         is_input_le: bool,
         count: Option<usize>,
-    ) -> Result<(&'a[u8], Self), crate::SpError>
+    ) -> Result<(&'a [u8], Self), crate::SpError>
     where
         Self: Sized,
     {
@@ -89,7 +89,7 @@ impl<'a, T: SpRead<'a>> SpRead<'a> for *mut T {
         Ok((rest, res as *mut T))
     }
 
-    fn from_bytes(input: &'a[u8]) -> Result<(&'a[u8], Self), crate::SpError>
+    fn from_bytes(input: &'a [u8]) -> Result<(&'a [u8], Self), crate::SpError>
     where
         Self: Sized,
     {

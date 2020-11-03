@@ -33,4 +33,3 @@ pub trait SpWrite {
     /// can fail.
     fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError>;
 }
-
