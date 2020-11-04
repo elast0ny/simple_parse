@@ -1,11 +1,16 @@
 use simple_parse::{SpError, SpRead, SpWrite};
 
+/* 
+    Demonstrates decoding and encoding of a binary format that
+    has fixed string sizes that may or may not be null terminated
+*/
+
 #[derive(SpRead, SpWrite, Debug)]
 pub enum Message {
     #[sp(id = "1")]
     ServerHello {
         #[sp(
-            reader = "string_read(input, 8)",
+            reader = "string_read(src, 8)",
             writer = "string_write(input, 8, dst)"
         )]
         banner: String,
@@ -14,7 +19,7 @@ pub enum Message {
     #[sp(id = "2")]
     ClientLogin {
         #[sp(
-            reader = "string_read(input, 8)",
+            reader = "string_read(src, 8)",
             writer = "string_write(input, 8, dst)"
         )]
         username: String,
@@ -29,68 +34,82 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         b'E', b'l', b'a', b's', b't', b'0', b'n', b'y', // username
     ];
 
+    let mut cursor = msg_stream;
     let mut dst = Vec::new();
-    let rest = msg_stream;
 
-    let (rest, msg) = Message::from_bytes(rest)?;
+    println!("Data[{}] : {:X?}", cursor.len(), cursor);
+    // Parse first message
+    let mut msg = Message::from_bytes(&mut cursor)?;
     println!("{:X?}", msg);
 
-    let (_rest, mut msg) = Message::from_bytes(rest)?;
+    // Parse second message
+    msg = Message::from_bytes(&mut cursor)?;
     println!("{:X?}", msg);
 
-    let len = msg.to_bytes(&mut dst)?;
-    println!("{} bytes : {:X?}", len, dst);
-    dst.clear();
-
-    if let Message::ClientLogin {
-        ref mut username, ..
-    } = msg
     {
-        *username = String::from("H4ck3r");
+        // Validity check
+        msg.to_bytes(&mut dst)?;
+        assert_eq!(&dst, &[0x02, // ClientLogin
+            b'E', b'l', b'a', b's', b't', b'0', b'n', b'y']);
+    }
+
+    println!("Modifying username !");
+    // Change the login username
+    if let Message::ClientLogin{username, ..} = &mut msg {
+        username.clear();
+        username.push_str("H4ck3r");
     }
     println!("{:X?}", msg);
 
-    let len = msg.to_bytes(&mut dst)?;
-    println!("{} bytes : {:X?}", len, dst);
+    dst.clear();
+    msg.to_bytes(&mut dst)?;
+    println!("Data[{}] : {:X?}", dst.len(), dst);
 
     Ok(())
 }
 
 // Parses utf8 characters up to a null terminator or num_bytes
-fn string_read(input: &[u8], num_bytes: usize) -> Result<(&[u8], String), SpError> {
-    // Makes sure theres at least num_bytes
-    if input.len() < num_bytes {
-        return Err(SpError::NotEnoughBytes);
+fn string_read<R: std::io::Read + ?Sized>(src: &mut R, num_bytes: usize) -> Result<String, SpError> {
+    
+
+    let mut vec: Vec<u8> = vec![0; num_bytes];
+    
+    if src.read(&mut vec).is_err() {
+        return Err(SpError::NotEnoughSpace);
     }
 
-    let (ascii_bytes, rest) = input.split_at(num_bytes);
-
-    // Attempt to find null terminator
-    let mut sz = 0;
-    for b in ascii_bytes.iter() {
-        if *b == 0x00 {
-            break;
-        }
-        sz += 1;
+    // Remove trailing null bytes
+    while !vec.is_empty() && vec[vec.len() - 1] == 0x00 {
+        vec.pop();
     }
 
-    let res = match std::str::from_utf8(&ascii_bytes[..sz]) {
-        Ok(s) => s.to_string(),
-        Err(_) => return Err(SpError::InvalidBytes),
-    };
-
-    Ok((rest, res))
+    // Parse string as UTF8
+    match String::from_utf8(vec) {
+        Ok(s) => Ok(s),
+        Err(_) => Err(SpError::InvalidBytes),
+    }
 }
 
 // Converts a string into bytes writing up to num_bytes. If the string
 // is shorter, it is padded with null terminators
-fn string_write(s: &str, num_bytes: usize, dst: &mut Vec<u8>) -> Result<usize, SpError> {
-    let mut bytes = s.to_string().into_bytes();
+fn string_write<W: std::io::Write + ?Sized>(s: &str, max_bytes: usize, dst: &mut W) -> Result<usize, SpError> {
+    let null_byte = &[0u8];
+    let bytes = s.as_bytes();
 
-    // Make sure string is exactly num_bytes
-    bytes.resize(num_bytes, 0x00);
+    let mut len_written = std::cmp::min(max_bytes, bytes.len());
+    
+    if dst.write(&bytes).is_err() {
+        return Err(SpError::NotEnoughSpace);
+    }
 
-    dst.append(&mut bytes);
+    // Pad tail with null bytes
+    while len_written < max_bytes {
+        
+        if dst.write(null_byte).is_err() {
+            return Err(SpError::NotEnoughSpace);
+        }
+        len_written += 1;
+    }
 
-    Ok(num_bytes)
+    Ok(len_written)
 }

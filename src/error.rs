@@ -4,7 +4,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy)]
 pub enum SpError {
     UnknownEnumVariant(usize),
-    NotEnoughBytes,
+    NotEnoughSpace,
     CountFieldOverflow,
     InvalidBytes,
 }
@@ -14,7 +14,7 @@ impl fmt::Display for SpError {
             SpError::UnknownEnumVariant(ref id) => {
                 write!(f, "Encountered unknown enum variant ID : {}", id)
             }
-            SpError::NotEnoughBytes => {
+            SpError::NotEnoughSpace => {
                 write!(f, "Not enough bytes in the buffer to parse wanted type")
             }
             SpError::CountFieldOverflow => write!(

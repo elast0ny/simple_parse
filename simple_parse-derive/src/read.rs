@@ -26,29 +26,23 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     };
 
     let name = input.ident;
-    let mut lifetime = quote!{'_i};
     let generics = add_trait_bounds(input.generics, parse_quote!{simple_parse::SpRead});    
     let (_impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    
-    // Use the first lifetime parameter as the one bound to the input bytes
-    if let Some(lt) = generics.lifetimes().next() {   
-        lifetime = quote!{#lt};
-    }
-    
+       
     // Generate impl block for TYPE and &TYPE
     let expanded = quote! {
-        impl<#lifetime> simple_parse::SpRead<#lifetime> for #name #ty_generics #where_clause {
-            fn from_bytes(input: &#lifetime[u8]) -> std::result::Result<(&#lifetime[u8], Self), simple_parse::SpError>
+        impl ::simple_parse::SpRead for #name #ty_generics #where_clause {
+            fn from_bytes<R: std::io::Read + ?Sized>(src: &mut R) -> Result<Self, ::simple_parse::SpError>
             where
-            Self: Sized
+                Self: Sized
             {
-                <#name>::inner_from_bytes(input, true, None)
+                <#name>::inner_from_bytes(src, true, None)
             }
-            fn inner_from_bytes(
-                input: &#lifetime[u8],
+            fn inner_from_bytes<R: std::io::Read + ?Sized>(
+                src: &mut R,
                 is_input_le: bool,
                 count: Option<usize>,
-            ) -> std::result::Result<(&#lifetime[u8], #name), simple_parse::SpError>
+            ) -> Result<Self, ::simple_parse::SpError>
             where
                 Self: Sized
             {
@@ -74,11 +68,9 @@ fn generate_struct_read(input: &DeriveInput, data: &DataStruct, attrs: &StructAt
     let (field_idents, read_code) = generate_field_read(&data.fields, default_is_le);
     let field_list = generate_field_list(&data.fields, Some(&field_idents), None);
 
-
     quote! {
-        let mut rest = input.as_ref();
         #read_code
-        Ok((rest, #name#field_list))
+        Ok(#name#field_list)
     }
     
 }
@@ -115,7 +107,7 @@ fn generate_enum_read(input: &DeriveInput, data: &DataEnum, attrs: &EnumAttribut
             quote! {
             #variant_id => {
                 #read_code
-                Ok((rest,  #name::#variant_name#field_list))
+                Ok(#name::#variant_name#field_list)
             },
         });
     }
@@ -123,15 +115,12 @@ fn generate_enum_read(input: &DeriveInput, data: &DataEnum, attrs: &EnumAttribut
     // Add match case to handle unknown IDs
     variant_code_gen.extend(quote! {
         unknown_id => {
-            Err(simple_parse::SpError::UnknownEnumVariant(unknown_id as _))
+            Err(::simple_parse::SpError::UnknownEnumVariant(unknown_id as _))
         }
     });
 
     quote! {
-        let mut rest = input.as_ref();
-        let r =  #id_type::inner_from_bytes(rest, #default_is_le, None)?;
-        rest = r.0;
-        match r.1 {
+        match #id_type::inner_from_bytes(src, #default_is_le, None)? {
             #variant_code_gen
         }
     }
@@ -176,7 +165,6 @@ fn generate_field_read(fields: &Fields, default_is_le: bool) -> (Vec<TokenStream
                 let s: TokenStream = s.parse().unwrap();
                 quote! {
                     {
-                        let input = rest;
                         let is_input_le = #is_input_le;
                         let count: Option<usize> = #count_field;
                         #s
@@ -185,15 +173,13 @@ fn generate_field_read(fields: &Fields, default_is_le: bool) -> (Vec<TokenStream
             }
             None => {
                 quote! {
-                    <#field_type>::inner_from_bytes(rest, #is_input_le, #count_field)
+                    <#field_type>::inner_from_bytes(src, #is_input_le, #count_field)
                 }
             }
         };
 
         generated_code.extend(quote! {
-            let read_func_result = #read_call?;
-            rest = read_func_result.0;
-            let #field_ident: #field_type = read_func_result.1;
+            let #field_ident: #field_type = #read_call?;
         })
     }
     (idents, generated_code)

@@ -1,46 +1,52 @@
 use std::collections::{HashMap, HashSet};
+use std::io::{Read, Write};
+use std::alloc::{alloc, Layout};
+
 use crate::{SpRead, SpWrite};
 
-impl<'a, T: SpRead<'a>> SpRead<'a> for Vec<T> {
-    fn inner_from_bytes(
-        input: &'a [u8],
+// Vec
+impl<T: SpRead> SpRead for Vec<T> {
+    fn inner_from_bytes<R: Read + ?Sized> (
+        src: &mut R,
         is_input_le: bool,
         count: Option<usize>,
-    ) -> Result<(&'a [u8], Self), crate::SpError>
+    ) -> Result<Self, crate::SpError>
     where
-        Self: Sized,
-    {
-        let num_items = match count {
-            None => panic!("Called Vec<T>::from_byte() but no count field specified for the Vec ! Did you forget to annotate the Vec with #[sp(count=\"<field>\")]"),
-            Some(c) => c,
-        };
+        Self: Sized {
+            let num_items = match count {
+                None => panic!("Called Vec<T>::from_byte() but no count field specified for the Vec ! Did you forget to annotate the Vec with #[sp(count=\"<field>\")]"),
+                Some(c) => c,
+            };
 
-        let mut res = Vec::with_capacity(num_items);
+            if num_items == 0 {
+                return Ok(Vec::new());
+            }
+            
+            // Pre-alloc uninitialized memory for speed
+            let mut val: Vec<T> = unsafe {
+                let bytes = alloc(Layout::array::<T>(num_items).unwrap()) as *mut T;
+                Vec::from_raw_parts(bytes, 0, num_items)
+            };
 
-        let mut rest = input;
-        for _ in 0..num_items {
-            let r = <T>::inner_from_bytes(rest, is_input_le, None)?;
-            rest = r.0;
+            for _ in 0..num_items {
+                val.push(<T>::inner_from_bytes(src, is_input_le, None)?)
+            } 
 
-            res.push(r.1);
+            Ok(val)
         }
 
-        Ok((rest, res))
-    }
-
-    fn from_bytes(input: &'a [u8]) -> Result<(&'a [u8], Self), crate::SpError>
+    /// Convert arbitrary bytes to Self
+    fn from_bytes<R: Read + ?Sized>(_src: &mut R) -> Result<Self, crate::SpError>
     where
-        Self: Sized,
-    {
-        Self::inner_from_bytes(input, true, None)
-    }
+        Self: Sized {
+            panic!("SpRead::inner_from_bytes() must be used for collections to specify an item count");
+        }
 }
-
 impl<T: SpWrite> SpWrite for Vec<T> {
-    fn inner_to_bytes(
+    fn inner_to_bytes<W: Write + ?Sized>(
         &self,
         is_output_le: bool,
-        dst: &mut Vec<u8>,
+        dst: &mut W,
     ) -> Result<usize, crate::SpError> {
         let mut total_sz = 0;
         for tmp in self.iter() {
@@ -48,52 +54,47 @@ impl<T: SpWrite> SpWrite for Vec<T> {
         }
         Ok(total_sz)
     }
-    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+
+    fn to_bytes<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 }
 
-
-impl<'a, T: SpRead<'a> + std::hash::Hash + std::cmp::Eq> SpRead<'a> for HashSet<T> {
-    fn inner_from_bytes(
-        input: &'a [u8],
+// HashSet
+impl<T: SpRead + std::hash::Hash + std::cmp::Eq> SpRead for HashSet<T> {
+    fn inner_from_bytes<'a, R: Read + ?Sized> (
+        src: &'a mut R,
         is_input_le: bool,
         count: Option<usize>,
-    ) -> Result<(&'a [u8], Self), crate::SpError>
+    ) -> Result<Self, crate::SpError>
     where
-        Self: Sized,
-    {
-        let num_items = match count {
-            None => panic!("Called HashSet<T>::from_byte() but no count field specified ! Did you forget to annotate with #[sp(count=\"<field>\")] ?"),
-            Some(c) => c,
-        };
-
-        let mut res = HashSet::with_capacity(num_items);
-
-        let mut rest = input;
-        for _ in 0..num_items {
-            let r = <T>::inner_from_bytes(rest, is_input_le, None)?;
-            rest = r.0;
-
-            res.insert(r.1);
+        Self: Sized {
+            let num_items = match count {
+                None => panic!("Called HashSet<T>::from_byte() but no count field specified ! Did you forget to annotate with #[sp(count=\"<field>\")] ?"),
+                Some(c) => c,
+            };
+    
+            let mut val = HashSet::with_capacity(num_items);
+    
+            for _ in 0..num_items {
+                val.insert(<T>::inner_from_bytes(src, is_input_le, None)?);
+            }
+    
+            Ok(val)
         }
 
-        Ok((rest, res))
-    }
-
-    fn from_bytes(input: &'a [u8]) -> Result<(&'a [u8], Self), crate::SpError>
+    /// Convert arbitrary bytes to Self
+    fn from_bytes<'a, R: Read + ?Sized>(_src: &'a mut R) -> Result<Self, crate::SpError>
     where
-        Self: Sized,
-    {
-        Self::inner_from_bytes(input, true, None)
-    }
+        Self: Sized {
+            panic!("SpRead::inner_from_bytes() must be used for collections to specify an item count");
+        }
 }
-
 impl<T: SpWrite> SpWrite for HashSet<T> {
-    fn inner_to_bytes(
+    fn inner_to_bytes<'a, W: Write + ?Sized>(
         &self,
         is_output_le: bool,
-        dst: &mut Vec<u8>,
+        dst: &'a mut W,
     ) -> Result<usize, crate::SpError> {
         let mut total_sz = 0;
         for tmp in self.iter() {
@@ -101,63 +102,57 @@ impl<T: SpWrite> SpWrite for HashSet<T> {
         }
         Ok(total_sz)
     }
-    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+
+    fn to_bytes<'a, W: Write + ?Sized>(&self, dst: &'a mut W) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 }
 
-
-impl<'a, K: SpRead<'a> + std::hash::Hash + std::cmp::Eq, V: SpRead<'a> + std::hash::Hash + std::cmp::Eq> SpRead<'a> for HashMap<K,V> {
-    fn inner_from_bytes(
-        input: &'a [u8],
+// HashMap
+impl<K: SpRead + std::hash::Hash + std::cmp::Eq, V: SpRead + std::hash::Hash + std::cmp::Eq> SpRead for HashMap<K,V> {
+    fn inner_from_bytes<'a, R: Read + ?Sized> (
+        src: &'a mut R,
         is_input_le: bool,
         count: Option<usize>,
-    ) -> Result<(&'a [u8], Self), crate::SpError>
+    ) -> Result<Self, crate::SpError>
     where
-        Self: Sized,
-    {
-        let num_items = match count {
-            None => panic!("Called HashMap<K,V>::from_byte() but no count field specified ! Did you forget to annotate with #[sp(count=\"<field>\")] ?"),
-            Some(c) => c,
-        };
-
-        let mut res = HashMap::with_capacity(num_items);
-
-        let mut rest = input;
-        for _ in 0..num_items {
-            let k = <K>::inner_from_bytes(rest, is_input_le, None)?;
-            rest = k.0;
-            let v = <V>::inner_from_bytes(rest, is_input_le, None)?;
-            rest = v.0;
-
-            res.insert(k.1, v.1);
+        Self: Sized {
+            let num_items = match count {
+                None => panic!("Called HashSet<T>::from_byte() but no count field specified ! Did you forget to annotate with #[sp(count=\"<field>\")] ?"),
+                Some(c) => c,
+            };
+    
+            let mut val = HashMap::with_capacity(num_items);
+    
+            for _ in 0..num_items {
+                val.insert(<K>::inner_from_bytes(src, is_input_le, None)?,<V>::inner_from_bytes(src, is_input_le, None)?);
+            }
+    
+            Ok(val)
         }
 
-        Ok((rest, res))
-    }
-
-    fn from_bytes(input: &'a [u8]) -> Result<(&'a [u8], Self), crate::SpError>
+    /// Convert arbitrary bytes to Self
+    fn from_bytes<'a, R: Read + ?Sized>(_src: &'a mut R) -> Result<Self, crate::SpError>
     where
-        Self: Sized,
-    {
-        Self::inner_from_bytes(input, true, None)
-    }
+        Self: Sized {
+            panic!("SpRead::inner_from_bytes() must be used for collections to specify an item count");
+        }
 }
-
-impl<K: SpWrite, V: SpWrite> SpWrite for HashMap<K,V> {
-    fn inner_to_bytes(
+impl<K: SpWrite + std::hash::Hash + std::cmp::Eq, V: SpWrite + std::hash::Hash + std::cmp::Eq> SpWrite for HashMap<K,V> {
+    fn inner_to_bytes<'a, W: Write + ?Sized>(
         &self,
         is_output_le: bool,
-        dst: &mut Vec<u8>,
+        dst: &'a mut W,
     ) -> Result<usize, crate::SpError> {
         let mut total_sz = 0;
-        for (k, v) in self.iter() {
+        for (k,v) in self.iter() {
             total_sz += k.inner_to_bytes(is_output_le, dst)?;
             total_sz += v.inner_to_bytes(is_output_le, dst)?;
         }
         Ok(total_sz)
     }
-    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+
+    fn to_bytes<'a, W: Write + ?Sized>(&self, dst: &'a mut W) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 }

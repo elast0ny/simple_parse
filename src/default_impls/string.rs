@@ -1,146 +1,136 @@
+use std::ffi::{CStr, CString};
+use std::io::{Read, Write};
+
 use crate::{SpError, SpRead, SpWrite};
 
-use std::ffi::{CStr, CString};
-
-impl<'a> SpRead<'a> for String {
-    fn inner_from_bytes(
-        input: &'a [u8],
+// String, &str
+impl SpRead for String {
+    fn inner_from_bytes<R: Read + ?Sized> (
+        src: &mut R,
         is_input_le: bool,
-        count: Option<usize>,
-    ) -> Result<(&'a [u8], Self), crate::SpError>
+        _count: Option<usize>,
+    ) -> Result<Self, crate::SpError>
     where
-        Self: Sized,
-    {
-        let mut rest = input;
+        Self: Sized {
 
-        // Get the number of bytes for the string
-        let res = <u64>::inner_from_bytes(rest, is_input_le, count)?;
-        rest = res.0;
-        let num_bytes = res.1;
+            // Get the number of bytes for the string
+            let num_bytes = <u64>::inner_from_bytes(src, is_input_le, None)?;
 
-        // Make sure theres enough data
-        if num_bytes as usize > rest.len() {
-            return Err(SpError::NotEnoughBytes);
+            // Read string contents as a Vec<u8>
+            let vec = <Vec<u8>>::inner_from_bytes(src, is_input_le, Some(num_bytes as _))?;
+            
+            // Parse the bytes as utf8
+            let val = match String::from_utf8(vec) {
+                Ok(s) => s,
+                Err(_e) => {
+                    return Err(SpError::InvalidBytes);
+                }
+            };
+
+            Ok(val)
         }
 
-        // Parse the bytes as utf8
-        let res = match std::str::from_utf8(&rest[..num_bytes as usize]) {
-            Ok(s) => s.to_string(),
-            Err(_e) => {
-                return Err(SpError::InvalidBytes);
-            }
-        };
-        rest = &rest[num_bytes as usize..];
-
-        Ok((rest, res))
-    }
-
-    fn from_bytes(input: &'a [u8]) -> Result<(&'a [u8], Self), crate::SpError>
+    /// Convert arbitrary bytes to Self
+    fn from_bytes<R: Read + ?Sized>(src: &mut R) -> Result<Self, crate::SpError>
     where
-        Self: Sized,
-    {
-        Self::inner_from_bytes(input, true, None)
-    }
+        Self: Sized {
+            Self::inner_from_bytes(src, true, None)
+        }
 }
-
 impl SpWrite for String {
-    fn inner_to_bytes(
+    fn inner_to_bytes<W: Write + ?Sized>(
         &self,
         _is_output_le: bool,
-        dst: &mut Vec<u8>,
+        dst: &mut W,
     ) -> Result<usize, crate::SpError> {
         self.as_str().inner_to_bytes(true, dst)
     }
-    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+    fn to_bytes<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 }
-
 impl SpWrite for &str {
-    fn inner_to_bytes(
+    fn inner_to_bytes<W: Write + ?Sized>(
         &self,
         is_output_le: bool,
-        dst: &mut Vec<u8>,
+        dst: &mut W,
     ) -> Result<usize, crate::SpError> {
         // Write string lenght as u64
-        let mut total_sz = (self.len() as u64).inner_to_bytes(is_output_le, dst)?;
+        let total_sz = (self.len() as u64).inner_to_bytes(is_output_le, dst)?;
 
-        // Copy the string bytes
-        dst.extend_from_slice(self.as_bytes());
-        total_sz += self.len();
-
-        Ok(total_sz)
+        match dst.write(self.as_bytes()) {
+            Ok(v) => Ok(total_sz + v),
+            Err(_) => Err(SpError::NotEnoughSpace),
+        }
     }
-    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+    fn to_bytes<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 }
 
-impl<'a> SpRead<'a> for CString {
-    fn inner_from_bytes(
-        input: &'a [u8],
-        _is_input_le: bool,
-        _count: Option<usize>,
-    ) -> Result<(&'a [u8], Self), crate::SpError>
-    where
-        Self: Sized,
-    {
-        let mut rest = input;
 
-        let mut null_byte_idx = None;
-        for (idx, b) in rest.iter().enumerate() {
-            if *b == 0x00 {
-                null_byte_idx = Some(idx);
-                break;
+impl SpRead for CString {
+    fn inner_from_bytes<R: Read + ?Sized> (
+        src: &mut R,
+        is_input_le: bool,
+        _count: Option<usize>,
+    ) -> Result<Self, crate::SpError>
+    where
+        Self: Sized {
+
+            // We dont know the size yet
+            let mut vec = Vec::new();
+
+            // Consume bytes until we hit null
+            loop {
+                let val = <u8>::inner_from_bytes(src, is_input_le, None)?;
+                vec.push(val);
+                if val == 0 {
+                    break;
+                }
             }
+
+            Ok(
+                unsafe {
+                    CString::from_vec_unchecked(vec)
+                }
+            )
         }
 
-        let res = if let Some(idx) = null_byte_idx {
-            rest = &rest[idx + 1..];
-            CString::new(&rest[..idx]).unwrap()
-        } else {
-            // No null terminator found
-            return Err(SpError::InvalidBytes);
-        };
-
-        Ok((rest, res))
-    }
-
-    fn from_bytes(input: &'a [u8]) -> Result<(&'a [u8], Self), crate::SpError>
+    /// Convert arbitrary bytes to Self
+    fn from_bytes<R: Read + ?Sized>(src: &mut R) -> Result<Self, crate::SpError>
     where
-        Self: Sized,
-    {
-        Self::inner_from_bytes(input, true, None)
-    }
+        Self: Sized {
+            Self::inner_from_bytes(src, true, None)
+        }
 }
-
 impl SpWrite for CString {
-    fn inner_to_bytes(
+    fn inner_to_bytes<W: Write + ?Sized>(
         &self,
         _is_output_le: bool,
-        dst: &mut Vec<u8>,
+        dst: &mut W,
     ) -> Result<usize, crate::SpError> {
         self.as_c_str().inner_to_bytes(true, dst)
     }
-    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+    fn to_bytes<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 }
-
 impl SpWrite for &CStr {
-    fn inner_to_bytes(
+    fn inner_to_bytes<W: Write + ?Sized>(
         &self,
         _is_output_le: bool,
-        dst: &mut Vec<u8>,
+        dst: &mut W,
     ) -> Result<usize, crate::SpError> {
         let contents = self.to_bytes_with_nul();
 
         // Copy the string bytes
-        dst.extend_from_slice(contents);
-
-        Ok(contents.len())
+        match dst.write(contents) {
+            Ok(v) => Ok(v),
+            Err(_) => Err(SpError::NotEnoughSpace),
+        }
     }
-    fn to_bytes(&self, dst: &mut Vec<u8>) -> Result<usize, crate::SpError> {
+    fn to_bytes<'a, W: Write + ?Sized>(&self, dst: &'a mut W) -> Result<usize, crate::SpError> {
         self.inner_to_bytes(true, dst)
     }
 }

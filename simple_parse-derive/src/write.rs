@@ -1,8 +1,8 @@
 use darling::FromDeriveInput;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, parse_quote, Data, DataEnum, DataStruct, DeriveInput, Fields};
 use std::collections::HashMap;
+use syn::{parse_macro_input, parse_quote, Data, DataEnum, DataStruct, DeriveInput, Fields};
 
 use crate::*;
 
@@ -30,13 +30,15 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics simple_parse::SpWrite for #name #ty_generics #where_clause {
-            fn to_bytes(&self, dst: &mut Vec<u8>) -> std::result::Result<usize, simple_parse::SpError> {
+        impl #impl_generics ::simple_parse::SpWrite for #name #ty_generics #where_clause {
+            fn to_bytes<W: std::io::Write + ?Sized>(&self, dst: &mut W) -> Result<usize, ::simple_parse::SpError> {
                 self.inner_to_bytes(true, dst)
             }
-            fn inner_to_bytes(
+            fn inner_to_bytes<W: std::io::Write + ?Sized>(
                 &self,
-                is_output_le: bool, res: &mut Vec<u8>) -> std::result::Result<usize, simple_parse::SpError>
+                is_output_le: bool,
+                dst: &mut W,
+            ) -> Result<usize, ::simple_parse::SpError>
             {
                 let mut written_len: usize = 0;
                 #generated_code
@@ -45,12 +47,14 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         }
 
         impl #impl_generics simple_parse::SpWrite for &#name #ty_generics #where_clause {
-            fn to_bytes(&self, dst: &mut Vec<u8>) -> std::result::Result<usize, simple_parse::SpError> {
+            fn to_bytes<W: std::io::Write + ?Sized>(&self, dst: &mut W) -> Result<usize, ::simple_parse::SpError> {
                 self.inner_to_bytes(true, dst)
             }
-            fn inner_to_bytes(
+            fn inner_to_bytes<W: std::io::Write + ?Sized>(
                 &self,
-                is_output_le: bool, res: &mut Vec<u8>) -> std::result::Result<usize, simple_parse::SpError>
+                is_output_le: bool,
+                dst: &mut W,
+            ) -> Result<usize, ::simple_parse::SpError>
             {
                 let mut written_len: usize = 0;
                 #generated_code
@@ -64,7 +68,11 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 /// Generates the code that dumps each field of the struct into the Vec<u8>
-fn generate_struct_write(_input: &DeriveInput, data: &DataStruct, attrs: StructAttributes) -> TokenStream {
+fn generate_struct_write(
+    _input: &DeriveInput,
+    data: &DataStruct,
+    attrs: StructAttributes,
+) -> TokenStream {
     let default_is_le: bool = match attrs.endian {
         None => cfg!(target_endian = "little"),
         Some(ref e) => is_lower_endian(e),
@@ -102,7 +110,7 @@ fn generate_enum_write(input: &DeriveInput, data: &DataEnum, attrs: EnumAttribut
         variant_code_gen.extend(quote! {
             #name::#variant_name#field_list => {
                 let mut var_id: #var_id_type = #variant_id;
-                written_len += var_id.inner_to_bytes(#default_is_le, res)?;
+                written_len += var_id.inner_to_bytes(#default_is_le, dst)?;
                 #field_write_code
             },
         });
@@ -135,15 +143,17 @@ fn generate_field_write(
 
         if let Some(field_name) = generate_count_field_name(field_attrs.count, fields, obj_name) {
             if count_fields.is_empty() {
-                dump_fields_code.extend(quote!{use std::convert::TryInto;});
+                dump_fields_code.extend(quote! {use std::convert::TryInto;});
             }
-            count_fields.insert(field_name.to_string(), generate_field_name(field, idx, obj_name));            
+            count_fields.insert(
+                field_name.to_string(),
+                generate_field_name(field, idx, obj_name),
+            );
         } else {
             panic!("Vec fields must have the `count` attribute");
         }
     }
     for (idx, field) in fields.iter().enumerate() {
-        
         let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
         let field_ident = generate_field_name(field, idx, obj_name);
 
@@ -158,9 +168,9 @@ fn generate_field_write(
             dump_fields_code.extend(quote! {
                 let _f: #field_type = match #ident.len().try_into() {
                     Ok(v) => v,
-                    Err(e) => return Err(simple_parse::SpError::CountFieldOverflow),
+                    Err(e) => return Err(::simple_parse::SpError::CountFieldOverflow),
                 };
-                written_len += _f.inner_to_bytes(#is_input_le, res)?;
+                written_len += _f.inner_to_bytes(#is_input_le, dst)?;
             });
             continue;
         }
@@ -169,8 +179,7 @@ fn generate_field_write(
         let write_call = match field_attrs.writer {
             Some(s) => {
                 let s: TokenStream = s.parse().unwrap();
-                let ref_mut = 
-                if obj_name.is_some() {
+                let ref_mut = if obj_name.is_some() {
                     quote! {
                         &mut
                     }
@@ -179,7 +188,6 @@ fn generate_field_write(
                 };
                 quote! {
                     {
-                        let dst: &mut Vec<u8> = res;
                         let input = #ref_mut #field_ident;
                         let is_input_le = #is_input_le;
                         #s
@@ -188,7 +196,7 @@ fn generate_field_write(
             }
             None => {
                 quote! {
-                    #field_ident.inner_to_bytes(#is_input_le, res)
+                    #field_ident.inner_to_bytes(#is_input_le, dst)
                 }
             }
         };

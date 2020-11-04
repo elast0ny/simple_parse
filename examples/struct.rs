@@ -4,13 +4,13 @@ use simple_parse::{SpRead, SpWrite};
 pub struct SomeStruct {
     some_field: u8,
     some_string: String,
-    num_dwords: u16,
-    #[sp(count = "num_dwords", endian = "big")]
+    _ndwords: u16,
+    #[sp(count = "_ndwords", endian = "big")]
     dwords: Vec<u32>,
 }
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut dst = Vec::new();
+    
     let data: Vec<u8> = vec![
         0x12, //some_field
         0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // string.len()
@@ -20,21 +20,24 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         0x99, 0xAA, 0xBB, 0xCC, //dword[2]
     ];
 
+    let mut cursor = data.as_slice();
+    println!("Data[{}] : {:X?}", cursor.len(), cursor);
+
     // Parse the arbitrary bytes into our struct
-    let (_, mut s) = SomeStruct::from_bytes(&data)?;
-    println!("{:X?}", s);
+    let mut s = SomeStruct::from_bytes(&mut cursor)?;
+    println!("Decoded : {:X?}", s);
 
-    // Dump struct as bytes
-    let len = s.to_bytes(&mut dst)?;
-    println!("{} bytes : {:X?}", len, dst);
-
+    // Make sure re-encoding equals original
+    let mut dst = Vec::new();
+    s.to_bytes(&mut dst)?;
     assert_eq!(&dst, &data);
-    dst.clear();
 
     // Add field and dump again
     s.dwords.push(0xDDEEFFFF);
-    let len = s.to_bytes(&mut dst)?;
-    println!("{} bytes : {:X?}", len, dst);
+    println!("Added number to vec : {:X?}", s.dwords);
+    dst.clear();
+    s.to_bytes(&mut dst)?;
+    println!("Data[{}] : {:X?}", dst.len(), dst);
     assert_eq!(
         &dst,
         &[
