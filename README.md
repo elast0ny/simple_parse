@@ -54,6 +54,6 @@ For complete examples see : [examples](examples/)
 |bool| 1 |
 | String | sizeof(u64) + str.len()|
 | CString | str.len() + 1 |
-| Vec<T> | sizeof(u64) + [vec.len() * sizeof(T)] |
-| HashSet<K> | sizeof(u64) + [set.len() * sizeof(K)] |
-| HashMap<K,V> | sizeof(u64) + [map.len() * (sizeof(K) + sizeof(V))] |
+| Vec\<T> | sizeof(u64) + [vec.len() * sizeof(T)] |
+| HashSet\<K> | sizeof(u64) + [set.len() * sizeof(K)] |
+| HashMap\<K,V> | sizeof(u64) + [map.len() * (sizeof(K) + sizeof(V))] |
