@@ -6,7 +6,7 @@
 
 simple_parse is a declarative encoder/decoder for Rust structs to/from binary.
 
-It provides basic implementations for most [standard Rust types](#Default-Impls) and also provides a derive macro to implement it one your own structs !
+It provides basic implementations for most [standard Rust types](#Default-Impls) and also provides a derive macro to automatically implement the trait on your own Rust types !
 
 For lower level control, take a look at [deku](https://github.com/sharksforarms/deku).
 
