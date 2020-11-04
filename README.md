@@ -6,9 +6,9 @@
 
 simple_parse is a declarative encoder/decoder for Rust structs to/from binary.
 
-It provides basic implementations for most standard Rust types and also provieds a derive macro.
+It provides basic implementations for most [standard Rust types](#Default-Impls) and also provides a derive macro to implement it one your own structs !
 
-For more lower level control, take a look at [deku](https://github.com/sharksforarms/deku).
+For lower level control, take a look at [deku](https://github.com/sharksforarms/deku).
 
 ## Usage
 
@@ -48,12 +48,12 @@ For complete examples see : [examples](examples/)
 ## Default Impls
 | Type | Encoded size |
 |:------:|:------:|
-|u8\|u16\|u32\|u64\|u128\|usize| 1,2,4,8,16,size_of(usize) |
-|i8\|i16\|i32\|i64\|i128\|isize| 1,2,4,8,16,size_of(usize) |
-|raw ptr| size_of(usize) |
+|u8\|u16\|u32\|u64\|u128\|usize| 1,2,4,8,16,sizeof(usize) |
+|i8\|i16\|i32\|i64\|i128\|isize| 1,2,4,8,16,sizeof(usize) |
+|raw ptr| sizeof(usize) |
 |bool| 1 |
-| String | size_of(u64) + str.len()|
+| String | sizeof(u64) + str.len()|
 | CString | str.len() + 1 |
-| Vec<T> | size_of(u64) + [vec.len() * size_of(T)] |
-| HashSet<K> | size_of(u64) + [set.len() * size_of(K)] |
-| HashMap<K,V> | size_of(u64) + [map.len() * (size_of(K) + size_of(V))] |
+| Vec<T> | sizeof(u64) + [vec.len() * sizeof(T)] |
+| HashSet<K> | sizeof(u64) + [set.len() * sizeof(K)] |
+| HashMap<K,V> | sizeof(u64) + [map.len() * (sizeof(K) + sizeof(V))] |
