@@ -153,17 +153,15 @@ fn generate_field_read(fields: &Fields, default_is_le: bool) -> (Vec<TokenStream
 
         let count_field = match generate_count_field_name(field_attrs.count, fields, None) {
             None => {
-                if type_str.starts_with("Vec") && type_str.starts_with("&[") {
-                    panic!("Vec fields must have the `count` attribute");
+                // Compile time check for types we know need a 'count'
+                if type_str.starts_with("Vec") || type_str.starts_with("HashMap") || type_str.starts_with("HashSet") {
+                    panic!("Dynamic container types must have the `count` attribute pointing to the field holding the item count");
                 }
                 quote! {
                     None
                 }
             }
             Some(field) => {
-                if !type_str.starts_with("Vec") && type_str.starts_with("&[") {
-                    panic!("Only Vec fields can have the `count` attribute");
-                }
                 quote! {Some(#field as _)}
             }
         };
