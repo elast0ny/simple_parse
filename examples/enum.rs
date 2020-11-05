@@ -36,25 +36,25 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut dst: Vec<u8> = Vec::new();
 
     println!("Decoding : {:X?}", orig_buf);
-    let mut msg = Message::from_bytes(&mut cursor)?;
+    let mut msg = Message::from_reader(&mut cursor)?;
     println!("Got : {:X?}", msg);
 
     {
         // Make sure encoding generated the exact same bytes
         dst.clear();
-        msg.to_bytes(&mut dst)?;
+        msg.to_writer(&mut dst)?;
         assert_eq!(&orig_buf[start_idx..start_idx + dst.len()], dst);
         start_idx += dst.len();
     }
 
     println!("Decoding : {:X?}", cursor);
-    msg = Message::from_bytes(&mut cursor)?;
+    msg = Message::from_reader(&mut cursor)?;
     println!("Got : {:X?}", msg);
 
     {
         // Make sure encoding generated the exact same bytes
         dst.clear();
-        msg.to_bytes(&mut dst)?;
+        msg.to_writer(&mut dst)?;
         assert_eq!(&orig_buf[start_idx..start_idx + dst.len()], dst);
     }
 
@@ -67,13 +67,13 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     dst.clear();
-    msg.to_bytes(&mut dst)?;
+    msg.to_writer(&mut dst)?;
     println!("Encoding : {:X?}", dst);
 
     {
         // Make sure encoding generated the exact same bytes
         dst.clear();
-        msg.to_bytes(&mut dst)?;
+        msg.to_writer(&mut dst)?;
         assert_eq!(
             &dst,
             &[

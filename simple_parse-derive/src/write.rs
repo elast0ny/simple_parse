@@ -31,10 +31,10 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     let expanded = quote! {
         impl #impl_generics ::simple_parse::SpWrite for #name #ty_generics #where_clause {
-            fn to_bytes<W: std::io::Write + ?Sized>(&self, dst: &mut W) -> Result<usize, ::simple_parse::SpError> {
-                self.inner_to_bytes(true, dst)
+            fn to_writer<W: std::io::Write + ?Sized>(&self, dst: &mut W) -> Result<usize, ::simple_parse::SpError> {
+                self.inner_to_writer(true, dst)
             }
-            fn inner_to_bytes<W: std::io::Write + ?Sized>(
+            fn inner_to_writer<W: std::io::Write + ?Sized>(
                 &self,
                 is_output_le: bool,
                 dst: &mut W,
@@ -47,10 +47,10 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         }
 
         impl #impl_generics simple_parse::SpWrite for &#name #ty_generics #where_clause {
-            fn to_bytes<W: std::io::Write + ?Sized>(&self, dst: &mut W) -> Result<usize, ::simple_parse::SpError> {
-                self.inner_to_bytes(true, dst)
+            fn to_writer<W: std::io::Write + ?Sized>(&self, dst: &mut W) -> Result<usize, ::simple_parse::SpError> {
+                self.inner_to_writer(true, dst)
             }
-            fn inner_to_bytes<W: std::io::Write + ?Sized>(
+            fn inner_to_writer<W: std::io::Write + ?Sized>(
                 &self,
                 is_output_le: bool,
                 dst: &mut W,
@@ -110,7 +110,7 @@ fn generate_enum_write(input: &DeriveInput, data: &DataEnum, attrs: EnumAttribut
         variant_code_gen.extend(quote! {
             #name::#variant_name#field_list => {
                 let mut var_id: #var_id_type = #variant_id;
-                written_len += var_id.inner_to_bytes(#default_is_le, dst)?;
+                written_len += var_id.inner_to_writer(#default_is_le, dst)?;
                 #field_write_code
             },
         });
@@ -123,7 +123,7 @@ fn generate_enum_write(input: &DeriveInput, data: &DataEnum, attrs: EnumAttribut
     }
 }
 
-/// Generates code that calls inner_to_bytes for every field and appends the resulting bytes to a vec
+/// Generates code that calls inner_to_writer for every field and appends the resulting bytes to a vec
 /// called `res`.
 /// This function also modifies any `count` field to match their vec's len()
 fn generate_field_write(
@@ -170,7 +170,7 @@ fn generate_field_write(
                     Ok(v) => v,
                     Err(e) => return Err(::simple_parse::SpError::CountFieldOverflow),
                 };
-                written_len += _f.inner_to_bytes(#is_input_le, dst)?;
+                written_len += _f.inner_to_writer(#is_input_le, dst)?;
             });
             continue;
         }
@@ -196,7 +196,7 @@ fn generate_field_write(
             }
             None => {
                 quote! {
-                    #field_ident.inner_to_bytes(#is_input_le, dst)
+                    #field_ident.inner_to_writer(#is_input_le, dst)
                 }
             }
         };

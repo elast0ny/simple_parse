@@ -31,14 +31,14 @@ let mut cursor: &[u8] = &[
 ];
 
 // Decode bytes into a struct
-let mut my_struct = SomeStruct::from_bytes(&mut cursor)?;
+let mut my_struct = SomeStruct::from_reader(&mut cursor)?;
 
 /// Modify the struct
 my_struct.items.push(0xFFFFFFFF);
 
 /// Encode modified struct into bytes
 let mut dst_buf: Vec<u8> = Vec::new();
-my_struct.to_bytes(&mut dst_buf)?;
+my_struct.to_writer(&mut dst_buf)?;
 //dst_buf == [0x01,0x00,0x03,0xDE,0xAD,0xBE,0xEF,0xBA,0xDC,0x0F,0xFE,0xFF,0xFF,0xFF,0xFF]
 ```
 
@@ -50,7 +50,6 @@ For complete examples see : [examples](examples/)
 |:------:|:------:|
 |u8\|u16\|u32\|u64\|u128\|usize| 1,2,4,8,16,sizeof(usize) |
 |i8\|i16\|i32\|i64\|i128\|isize| 1,2,4,8,16,sizeof(usize) |
-|raw ptr| sizeof(usize) |
 |bool| 1 |
 | String | sizeof(u64) + str.len()|
 | CString | str.len() + 1 |

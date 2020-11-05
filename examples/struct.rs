@@ -24,19 +24,19 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Data[{}] : {:X?}", cursor.len(), cursor);
 
     // Parse the arbitrary bytes into our struct
-    let mut s = SomeStruct::from_bytes(&mut cursor)?;
+    let mut s = SomeStruct::from_reader(&mut cursor)?;
     println!("Decoded : {:X?}", s);
 
     // Make sure re-encoding equals original
     let mut dst = Vec::new();
-    s.to_bytes(&mut dst)?;
+    s.to_writer(&mut dst)?;
     assert_eq!(&dst, &data);
 
     // Add field and dump again
     s.dwords.push(0xDDEEFFFF);
     println!("Added number to vec : {:X?}", s.dwords);
     dst.clear();
-    s.to_bytes(&mut dst)?;
+    s.to_writer(&mut dst)?;
     println!("Data[{}] : {:X?}", dst.len(), dst);
     assert_eq!(
         &dst,

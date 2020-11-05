@@ -32,13 +32,13 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // Generate impl block for TYPE and &TYPE
     let expanded = quote! {
         impl ::simple_parse::SpRead for #name #ty_generics #where_clause {
-            fn from_bytes<R: std::io::Read + ?Sized>(src: &mut R) -> Result<Self, ::simple_parse::SpError>
+            fn from_reader<R: std::io::Read + ?Sized>(src: &mut R) -> Result<Self, ::simple_parse::SpError>
             where
                 Self: Sized
             {
-                <#name>::inner_from_bytes(src, true, None)
+                <#name>::inner_from_reader(src, true, None)
             }
-            fn inner_from_bytes<R: std::io::Read + ?Sized>(
+            fn inner_from_reader<R: std::io::Read + ?Sized>(
                 src: &mut R,
                 is_input_le: bool,
                 count: Option<usize>,
@@ -120,15 +120,15 @@ fn generate_enum_read(input: &DeriveInput, data: &DataEnum, attrs: &EnumAttribut
     });
 
     quote! {
-        match #id_type::inner_from_bytes(src, #default_is_le, None)? {
+        match #id_type::inner_from_reader(src, #default_is_le, None)? {
             #variant_code_gen
         }
     }
 }
 
-/// Generates the code that calls `from_bytes` for the specific field
+/// Generates the code that calls `from_reader` for the specific field
 /// e.g :
-///     let (rest , field_0) = u8::inner_from_bytes(...)?;
+///     let (rest , field_0) = u8::inner_from_reader(...)?;
 fn generate_field_read(fields: &Fields, default_is_le: bool) -> (Vec<TokenStream>, TokenStream) {
     let mut idents = Vec::with_capacity(fields.len());
     let mut generated_code = TokenStream::new();
@@ -173,7 +173,7 @@ fn generate_field_read(fields: &Fields, default_is_le: bool) -> (Vec<TokenStream
             }
             None => {
                 quote! {
-                    <#field_type>::inner_from_bytes(src, #is_input_le, #count_field)
+                    <#field_type>::inner_from_reader(src, #is_input_le, #count_field)
                 }
             }
         };

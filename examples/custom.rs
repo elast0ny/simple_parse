@@ -39,16 +39,16 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Data[{}] : {:X?}", cursor.len(), cursor);
     // Parse first message
-    let mut msg = Message::from_bytes(&mut cursor)?;
+    let mut msg = Message::from_reader(&mut cursor)?;
     println!("{:X?}", msg);
 
     // Parse second message
-    msg = Message::from_bytes(&mut cursor)?;
+    msg = Message::from_reader(&mut cursor)?;
     println!("{:X?}", msg);
 
     {
         // Validity check
-        msg.to_bytes(&mut dst)?;
+        msg.to_writer(&mut dst)?;
         assert_eq!(&dst, &[0x02, // ClientLogin
             b'E', b'l', b'a', b's', b't', b'0', b'n', b'y']);
     }
@@ -62,7 +62,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{:X?}", msg);
 
     dst.clear();
-    msg.to_bytes(&mut dst)?;
+    msg.to_writer(&mut dst)?;
     println!("Data[{}] : {:X?}", dst.len(), dst);
 
     Ok(())

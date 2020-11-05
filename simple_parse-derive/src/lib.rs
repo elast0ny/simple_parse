@@ -54,7 +54,7 @@ pub(crate) struct FieldAttributes {
     count: Option<String>,
 
     /// Allows the use of a custom byte reading function. This function must have the same
-    /// return type as SpRead::inner_from_bytes
+    /// return type as SpRead::inner_from_reader
     /// Variables in scope :
     ///     input : The input bytes
     ///     is_input_le : If input is in little endian
@@ -124,7 +124,7 @@ pub(crate) fn generate_field_name(
     .unwrap()
 }
 
-// Returns either None or Some(<field_name>). The return value is meant to be used as the count argument to from_bytes/to_bytes
+// Returns either None or Some(<field_name>). The return value is meant to be used as the count argument to from_reader/to_writer
 pub(crate) fn generate_count_field_name(
     count: Option<String>,
     fields: &Fields,
