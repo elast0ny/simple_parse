@@ -63,12 +63,13 @@ impl SpWrite for &str {
     fn inner_to_writer<W: Write + ?Sized>(
         &self,
         is_output_le: bool,
+        prepend_count: bool,
         dst: &mut W,
     ) -> Result<usize, crate::SpError> {
-        self.as_bytes().inner_to_writer(is_output_le, dst)
+        self.as_bytes().inner_to_writer(is_output_le, prepend_count, dst)
     }
     fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-        self.inner_to_writer(true, dst)
+        self.inner_to_writer(true, true, dst)
     }
 }
 
@@ -77,16 +78,13 @@ impl SpRead for String {
     fn inner_from_reader<R: Read + ?Sized>(
         src: &mut R,
         is_input_le: bool,
-        _count: Option<usize>,
+        count: Option<usize>,
     ) -> Result<Self, crate::SpError>
     where
         Self: Sized,
     {
-        // Get the number of bytes for the string
-        let num_bytes = <u64>::inner_from_reader(src, is_input_le, None)?;
-
         // Read string contents as a Vec<u8>
-        let vec = <Vec<u8>>::inner_from_reader(src, is_input_le, Some(num_bytes as _))?;
+        let vec = <Vec<u8>>::inner_from_reader(src, is_input_le, count)?;
 
         // Parse the bytes as utf8
         let val = match String::from_utf8(vec) {
@@ -154,12 +152,13 @@ impl SpWrite for String {
     fn inner_to_writer<W: Write + ?Sized>(
         &self,
         _is_output_le: bool,
+        prepend_count: bool,
         dst: &mut W,
     ) -> Result<usize, crate::SpError> {
-        self.as_str().inner_to_writer(true, dst)
+        self.as_str().inner_to_writer(true, prepend_count, dst)
     }
     fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-        self.inner_to_writer(true, dst)
+        self.inner_to_writer(true, true, dst)
     }
 }
 /// Write &String to writer
@@ -167,12 +166,13 @@ impl SpWrite for &String {
     fn inner_to_writer<W: Write + ?Sized>(
         &self,
         _is_output_le: bool,
+        prepend_count: bool,
         dst: &mut W,
     ) -> Result<usize, crate::SpError> {
-        self.as_str().inner_to_writer(true, dst)
+        self.as_str().inner_to_writer(true, prepend_count, dst)
     }
     fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-        self.inner_to_writer(true, dst)
+        self.inner_to_writer(true, true, dst)
     }
 }
 /// Write &mut String to writer
@@ -180,12 +180,13 @@ impl SpWrite for &mut String {
     fn inner_to_writer<W: Write + ?Sized>(
         &self,
         _is_output_le: bool,
+        prepend_count: bool,
         dst: &mut W,
     ) -> Result<usize, crate::SpError> {
-        self.as_str().inner_to_writer(true, dst)
+        self.as_str().inner_to_writer(true, prepend_count, dst)
     }
     fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-        self.inner_to_writer(true, dst)
+        self.inner_to_writer(true, true, dst)
     }
 }
 
@@ -264,6 +265,7 @@ impl SpWrite for &CStr {
     fn inner_to_writer<W: Write + ?Sized>(
         &self,
         _is_output_le: bool,
+        _prepend_count: bool,
         dst: &mut W,
     ) -> Result<usize, crate::SpError> {
         let contents = self.to_bytes_with_nul();
@@ -275,7 +277,7 @@ impl SpWrite for &CStr {
         }
     }
     fn to_writer<'a, W: Write + ?Sized>(&self, dst: &'a mut W) -> Result<usize, crate::SpError> {
-        self.inner_to_writer(true, dst)
+        self.inner_to_writer(true, true, dst)
     }
 }
 
@@ -316,12 +318,13 @@ impl SpWrite for CString {
     fn inner_to_writer<W: Write + ?Sized>(
         &self,
         _is_output_le: bool,
+        prepend_count: bool,
         dst: &mut W,
     ) -> Result<usize, crate::SpError> {
-        self.as_c_str().inner_to_writer(true, dst)
+        self.as_c_str().inner_to_writer(true, prepend_count, dst)
     }
     fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-        self.inner_to_writer(true, dst)
+        self.inner_to_writer(true, true, dst)
     }
 }
 /// Write &CString to writer
@@ -329,12 +332,13 @@ impl SpWrite for &CString {
     fn inner_to_writer<W: Write + ?Sized>(
         &self,
         _is_output_le: bool,
+        _prepend_count: bool,
         dst: &mut W,
     ) -> Result<usize, crate::SpError> {
-        self.as_c_str().inner_to_writer(true, dst)
+        self.as_c_str().inner_to_writer(true, true, dst)
     }
     fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-        self.inner_to_writer(true, dst)
+        self.inner_to_writer(true, true, dst)
     }
 }
 /// Write &mut CString to writer
@@ -342,11 +346,12 @@ impl SpWrite for &mut CString {
     fn inner_to_writer<W: Write + ?Sized>(
         &self,
         _is_output_le: bool,
+        _prepend_count: bool,
         dst: &mut W,
     ) -> Result<usize, crate::SpError> {
-        self.as_c_str().inner_to_writer(true, dst)
+        self.as_c_str().inner_to_writer(true, true, dst)
     }
     fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-        self.inner_to_writer(true, dst)
+        self.inner_to_writer(true, true, dst)
     }
 }

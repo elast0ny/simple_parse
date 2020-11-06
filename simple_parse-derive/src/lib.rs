@@ -6,9 +6,23 @@ use syn::{Field, Fields, GenericParam, Generics};
 mod read;
 mod write;
 
+pub (crate) enum ReaderType {
+    Reader,
+    Raw,
+    RawMut
+}
+
 #[proc_macro_derive(SpRead, attributes(sp))]
 pub fn generate_read(input: TokenStream) -> TokenStream {
-    read::generate(input)
+    read::generate(input, ReaderType::Reader)
+}
+#[proc_macro_derive(SpReadRaw, attributes(sp))]
+pub fn generate_readraw(input: TokenStream) -> TokenStream {
+    read::generate(input, ReaderType::Raw)
+}
+#[proc_macro_derive(SpReadRawMut, attributes(sp))]
+pub fn generate_readrawmut(input: TokenStream) -> TokenStream {
+    read::generate(input, ReaderType::RawMut)
 }
 
 #[proc_macro_derive(SpWrite, attributes(sp))]
@@ -99,8 +113,9 @@ pub(crate) fn generate_field_name(
     field: &Field,
     idx: usize,
     obj_name: Option<&str>,
+    deref_references: bool,
 ) -> proc_macro2::TokenStream {
-    match field.ident {
+    let mut fname = match field.ident {
         Some(ref i) => {
             if let Some(name) = obj_name {
                 format!("{}.{}", name, i)
@@ -119,26 +134,31 @@ pub(crate) fn generate_field_name(
                 //Ident::new(&format!("field_{}", idx), proc_macro2::Span::call_site())
             }
         }
+    };
+
+    if deref_references {
+        let field_type = &field.ty;
+        let field_type = quote! {#field_type}.to_string();
+        if field_type.starts_with('&') {
+            fname = format!("*{}", fname);
+        }
     }
-    .parse()
+    
+    fname.parse()
     .unwrap()
 }
 
-// Returns either None or Some(<field_name>). The return value is meant to be used as the count argument to from_reader/to_writer
+/// Converts `count` into a useable field name. Returns None if `count` is None or if the value of `count` cannot be found.
+/// eg. self.num_field | *self.num_field | field_01
 pub(crate) fn generate_count_field_name(
     count: Option<String>,
     fields: &Fields,
     obj_name: Option<&str>,
+    deref_references: bool
 ) -> Option<proc_macro2::TokenStream> {
-    let count_val = match count {
+    let count_field = match count {
         None => return None,
         Some(s) => s,
-    };
-
-    let prefix = if let Some(name) = obj_name {
-        format!("{}.", name)
-    } else {
-        String::new()
     };
 
     let mut count_field_name = None;
@@ -147,21 +167,12 @@ pub(crate) fn generate_count_field_name(
             Some(ref i) => i.to_string(),
             None => format!("field_{}", idx),
         };
-        if cur_field == count_val {
-            let field_type = &field.ty;
-            let field_type = quote! {#field_type}.to_string();
-            count_field_name = Some(if field_type.starts_with('&') {
-                format!("*{}{}", prefix, cur_field)
-            } else {
-                format!("{}{}", prefix, cur_field)
-            });
+        if cur_field == count_field {
+            count_field_name = Some(generate_field_name(field, idx, obj_name, deref_references));
         }
     }
 
-    match count_field_name {
-        None => None,
-        Some(f) => Some(f.parse().unwrap()),
-    }
+    count_field_name
 }
 
 /// Returns whether the string is set to "little"
@@ -171,7 +182,7 @@ pub(crate) fn is_lower_endian(val: &str) -> bool {
     } else if val == "big" {
         false
     } else {
-        panic!("Unknown endian specified : {}", val);
+        panic!("Unknown endianness : {}", val);
     }
 }
 
@@ -196,7 +207,7 @@ fn generate_field_list(
         None => {
             tmp = Vec::with_capacity(fields.len());
             for (idx, field) in fields.iter().enumerate() {
-                tmp.push(generate_field_name(field, idx, None));
+                tmp.push(generate_field_name(field, idx, None, false));
             }
             &tmp
         }

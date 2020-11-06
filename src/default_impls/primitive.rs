@@ -1,7 +1,6 @@
 use crate::{SpError, SpRead, SpReadRaw, SpReadRawMut, SpWrite};
 use std::convert::TryInto;
 use std::io::{Cursor, Read, Write};
-use std::mem::size_of;
 
 // Implements :
 //      Self        SpRead
@@ -73,8 +72,16 @@ macro_rules! ImplSpTraits {
             where
                 Self: Sized,
             {
+                let val_ref = <&Self>::inner_from_slice(src, is_input_le, count)?;
+                
+                let val = if is_input_le {
+                    val_ref.to_le()
+                } else {
+                    val_ref.to_be()
+                };
+
                 // Get reference and deref it to get the value
-                Ok(*(<&Self>::inner_from_slice(src, is_input_le, count)?))
+                Ok(val)
             }
             fn from_slice(src: &mut Cursor<&'b [u8]>) -> Result<Self, crate::SpError>
             where
@@ -186,6 +193,7 @@ macro_rules! ImplSpTraits {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
                 is_output_le: bool,
+                _prepend_count: bool,
                 dst: &mut W,
             ) -> Result<usize, crate::SpError> {
                 let value = if is_output_le {
@@ -201,7 +209,7 @@ macro_rules! ImplSpTraits {
             }
 
             fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-                self.inner_to_writer(true, dst)
+                self.inner_to_writer(true, true, dst)
             }
         }
         // Write &Self into writer
@@ -209,13 +217,14 @@ macro_rules! ImplSpTraits {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
                 is_output_le: bool,
+                prepend_count: bool,
                 dst: &mut W,
             ) -> Result<usize, crate::SpError> {
-                (**self).inner_to_writer(is_output_le, dst)
+                (**self).inner_to_writer(is_output_le, prepend_count, dst)
             }
 
             fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-                self.inner_to_writer(true, dst)
+                self.inner_to_writer(true, true, dst)
             }
         }
         // Write &mut Self into writer
@@ -223,13 +232,14 @@ macro_rules! ImplSpTraits {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
                 is_output_le: bool,
+                prepend_count: bool,
                 dst: &mut W,
             ) -> Result<usize, crate::SpError> {
-                (**self).inner_to_writer(is_output_le, dst)
+                (**self).inner_to_writer(is_output_le, prepend_count, dst)
             }
 
             fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-                self.inner_to_writer(true, dst)
+                self.inner_to_writer(true, true, dst)
             }
         }
     };
@@ -257,9 +267,9 @@ macro_rules! bool_read {
 }
 // Write bool into writer
 macro_rules! bool_SpWrite {
-    ($self:ident, $is_output_le:ident, $dst: ident) => {{
+    ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
         let val = if *$self { 1u8 } else { 0u8 };
-        val.inner_to_writer($is_output_le, $dst)
+        val.inner_to_writer($is_output_le, $prepend_count, $dst)
     }};
 }
 impl_SpRead!(bool, bool_read);
@@ -270,8 +280,13 @@ impl_SpWrite!(bool, bool_SpWrite);
 /* Slices */
 macro_rules! slice_SpReadRaw {
     ($parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
-        // Get number of elements in slice
-        let num_items = <u64>::$parse_func($src, $is_input_le, $count)?;
+        // Either count is passed to us or we use prepended value before contents
+        let num_items = match $count {
+            Some(v) => v as u64,
+            None => {
+                <u64>::$parse_func($src, $is_input_le, $count)?
+            }
+        };
         let sz_needed = num_items * std::mem::size_of::<T>() as u64;
         let idx = $src.position();
         // Size check
@@ -291,8 +306,13 @@ macro_rules! slice_SpReadRaw {
 }
 macro_rules! slice_SpReadRawMut {
     ($parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
-        // Get number of elements in slice
-        let num_items = <u64>::$parse_func($src, $is_input_le, $count)?;
+        // Either count is passed to us or we use prepended value before contents
+        let num_items = match $count {
+            Some(v) => v as u64,
+            None => {
+                <u64>::$parse_func($src, $is_input_le, $count)?
+            }
+        };
         let sz_needed = num_items * std::mem::size_of::<T>() as u64;
         let idx = $src.position();
         // Size check
@@ -311,20 +331,19 @@ macro_rules! slice_SpReadRawMut {
     }};
 }
 macro_rules! slice_SpWrite {
-    ($self:ident, $is_output_le:ident, $dst: ident) => {{
+    ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
+        let mut total_sz = 0;
         // Write size as u64
-        ($self.len() as u64).inner_to_writer($is_output_le, $dst)?;
-        // Convert to slice of u8
-        let bytes = unsafe {
-            std::slice::from_raw_parts(
-                $self.as_ptr() as *const _ as *const u8,
-                $self.len() * size_of::<T>(),
-            )
-        };
-        if $dst.write(bytes).is_err() {
-            return Err(SpError::NotEnoughSpace);
+        if $prepend_count {
+            // Use default settings for inner types
+            total_sz += ($self.len() as u64).inner_to_writer(true, true, $dst)?;
         }
-        Ok(size_of::<u64>() + bytes.len()) 
+
+        for val in $self.iter() {
+            total_sz += val.inner_to_writer($is_output_le, $prepend_count, $dst)?;
+        }
+        
+        Ok(total_sz)
     }};
 }
 

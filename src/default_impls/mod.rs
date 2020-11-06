@@ -112,12 +112,13 @@ macro_rules! impl_SpWrite {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
                 is_output_le: bool,
+                prepend_count: bool,
                 dst: &mut W,
             ) -> Result<usize, crate::SpError> {
-                $writer!(self, is_output_le, dst)
+                $writer!(self, is_output_le, prepend_count, dst)
             }
             fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-                self.inner_to_writer(true, dst)
+                self.inner_to_writer(true, true, dst)
             }
         }
         /// Write &Self into writer
@@ -125,12 +126,13 @@ macro_rules! impl_SpWrite {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
                 is_output_le: bool,
+                prepend_count: bool,
                 dst: &mut W,
             ) -> Result<usize, crate::SpError> {
-                (**self).inner_to_writer(is_output_le, dst)
+                (**self).inner_to_writer(is_output_le, prepend_count, dst)
             }
             fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-                self.inner_to_writer(true, dst)
+                self.inner_to_writer(true, true, dst)
             }
         }
         /// Write &mut Self into writer
@@ -138,12 +140,13 @@ macro_rules! impl_SpWrite {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
                 is_output_le: bool,
+                prepend_count: bool,
                 dst: &mut W,
             ) -> Result<usize, crate::SpError> {
-                (**self).inner_to_writer(is_output_le, dst)
+                (**self).inner_to_writer(is_output_le, prepend_count, dst)
             }
             fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-                self.inner_to_writer(true, dst)
+                self.inner_to_writer(true, true, dst)
             }
         }
     }

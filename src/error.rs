@@ -1,11 +1,16 @@
 use std::error;
 use std::fmt;
 
+/// Possible errors when decoding/encoding
 #[derive(Debug, Clone, Copy)]
 pub enum SpError {
+    /// The data we attempted to decode did not contain a valid enum variant
     UnknownEnumVariant(usize),
+    /// The is not enough space to decode into T or to write T into the writer
     NotEnoughSpace,
+    /// An annotated count field's type is too small to fit the number of elements
     CountFieldOverflow,
+    /// The data contained enough bytes but the format was wrong
     InvalidBytes,
 }
 impl fmt::Display for SpError {

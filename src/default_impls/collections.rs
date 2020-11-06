@@ -1,9 +1,9 @@
-use std::alloc::{alloc, Layout};
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 
 use std::cmp::Eq;
 use std::hash::Hash;
+use std::convert::TryInto;
 
 use crate::{SpRead, SpReadRaw, SpReadRawMut, SpWrite};
 use std::io::Cursor;
@@ -17,19 +17,15 @@ macro_rules! vec_read {
             Some(c) => c,
             None => {
                 // Read prepended size
-                //<u64>::inner_from_mut_slice(src, is_input_le, count)?.try_into().unwrap()
-                panic!("Vec must be annotated with #[sp(count=\"field_name\")]");
+                <u64>::$parse_func($src, true, None)?.try_into().unwrap()
             }
         };
 
         if num_items == 0 {
             return Ok(Vec::new());
         }
-        // Pre-alloc uninitialized memory for speed
-        let mut val: Vec<T> = unsafe {
-            let bytes = alloc(Layout::array::<T>(num_items).unwrap()) as *mut T;
-            Vec::from_raw_parts(bytes, 0, num_items)
-        };
+
+        let mut val: Vec<T> = Vec::with_capacity(num_items);
 
         for _ in 0..num_items {
             val.push(<T>::$parse_func($src, $is_input_le, None)?)
@@ -41,12 +37,8 @@ macro_rules! vec_read {
 
 /// Into writer
 macro_rules! vec_SpWrite {
-    ($self:ident, $is_output_le:ident, $dst: ident) => {{
-        let mut total_sz = 0;
-        for tmp in $self.iter() {
-            total_sz += tmp.inner_to_writer($is_output_le, $dst)?;
-        }
-        Ok(total_sz)
+    ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
+        $self.as_slice().inner_to_writer($is_output_le, $prepend_count, $dst)
     }};
 }
 impl_SpRead!(Vec<T>, vec_read, T);
@@ -75,10 +67,17 @@ macro_rules! hashset_read {
 }
 /// Into writer
 macro_rules! hashset_SpWrite {
-    ($self:ident, $is_output_le:ident, $dst: ident) => {{
+    ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
         let mut total_sz = 0;
+        let _ = $is_output_le;
+        // Write size as u64
+        if $prepend_count {
+            // Use default settings for inner types
+            total_sz += ($self.len() as u64).inner_to_writer(true, true, $dst)?;
+        }
+
         for tmp in $self.iter() {
-            total_sz += tmp.inner_to_writer($is_output_le, $dst)?;
+            total_sz += tmp.inner_to_writer($is_output_le, $prepend_count, $dst)?;
         }
         Ok(total_sz)
     }};
@@ -111,11 +110,18 @@ macro_rules! hashmap_read {
 }
 /// Into writer
 macro_rules! hashmap_SpWrite {
-    ($self:ident, $is_output_le:ident, $dst: ident) => {{
+    ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
         let mut total_sz = 0;
+        let _ = $is_output_le;
+        // Write size as u64
+        if $prepend_count {
+            // Use default settings for inner types
+            total_sz += ($self.len() as u64).inner_to_writer(true, true, $dst)?;
+        }
+
         for (k, v) in $self.iter() {
-            total_sz += k.inner_to_writer($is_output_le, $dst)?;
-            total_sz += v.inner_to_writer($is_output_le, $dst)?;
+            total_sz += k.inner_to_writer($is_output_le, $prepend_count, $dst)?;
+            total_sz += v.inner_to_writer($is_output_le, $prepend_count, $dst)?;
         }
         Ok(total_sz)
     }};

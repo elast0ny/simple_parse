@@ -8,7 +8,7 @@ pub use default_impls::*;
 
 pub use simple_parse_derive::*;
 
-/// Implements reading a Rust type from a byte slice.
+/// Parses T or &T from a byte slice
 /// 
 /// # Warning
 /// ## Implementing for &T 
@@ -55,7 +55,7 @@ pub trait SpReadRaw<'b> {
         Self: Sized;
 }
 
-/// Implements reading a Rust type from a mutable byte slice.
+/// Parses T, &T or &mut T from a mutable byte slice
 /// 
 /// # Warning
 /// See [SpReadRaw](trait.SpReadRaw.html) warning.
@@ -75,7 +75,10 @@ pub trait SpReadRawMut<'b> {
         Self: Sized;
 }
 
-/// Implements reading a Rust type from a byte stream
+/// Parses T from a Reader (File,TcpStream, etc...)
+///
+/// This trait is most usefull when the bytes are coming from some kind of IO stream.
+/// When possible, it is recommend to use SpReadRaw[Mut] instead for better performance.
 pub trait SpRead {
     /// Parses bytes from a `&mut Read` into Self with control over endianness and number of items (For dynamically sized types)
     fn inner_from_reader<R: Read + ?Sized>(
@@ -92,12 +95,13 @@ pub trait SpRead {
         Self: Sized;
 }
 
-/// Implements writing a Rust type into a byte stream
+/// Writes T to the writer (File, TcpStream, Vec<u8>, etc...)
 pub trait SpWrite {
     /// Writes the byte representation for Self into a `&mut Write` with control over endianness
     fn inner_to_writer<W: Write + ?Sized>(
         &self,
         is_output_le: bool,
+        prepend_count: bool,
         dst: &mut W,
     ) -> Result<usize, crate::SpError>;
 
