@@ -4,11 +4,11 @@
 [![mio](https://docs.rs/simple_parse/badge.svg)](https://docs.rs/simple_parse/)
 ![Lines of Code](https://tokei.rs/b1/github/elast0ny/simple_parse)
 
-simple_parse is a declarative serialiser for Rust structs to/from binary.
+A declarative serialiser for Rust type to/from binary.
 
-It provides basic implementations for most [standard Rust types](#Default-Impls) and also provides a derive macro to automatically implement the trait on your own Rust types !
+It provides basic implementations for most [standard Rust types](https://docs.rs/simple_parse/latest/simple_parse/trait.SpReadRawMut.html#foreign-impls) and also provides a derive macro to automatically implement the trait on your own types !
 
-For lower level control, take a look at [deku](https://github.com/sharksforarms/deku).
+For bit level control or more advanced features, take a look at [deku](https://github.com/sharksforarms/deku).
 
 ## Usage
 
@@ -49,6 +49,6 @@ For complete examples see : [examples](examples/)
 | Feature | Description |
 |:----:|:----|
 | No-Copy parsing | simple_parse is able to generate references into byte slices (see [struct.rs](examples/struct.rs)) |
-| count | Annotating a dynamically sized field with `count` allows it's number of items to live somewhere else in the struct. The default is to simply prepend the number of items as a u64|
-| endian | Annotating structs/fields with `endian` gives control over how numbers will be parse |
-|Custom read/write | Custom parsers can be writen for individual fields when simple_parse doesnt have the adequate default implementation|
+| [count](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs#L45) | Annotating a dynamically sized field with `count` allows it's number of items to live somewhere else in the struct. The default is to simply prepend the number of items as a u64|
+| [endian](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs#L17) | Annotating structs/fields with `endian` gives control over how numbers will be parse |
+|Custom [read](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs#L45)/[write](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs#L67) | Custom parsers can be writen for individual fields when simple_parse doesnt have the adequate default implementation|

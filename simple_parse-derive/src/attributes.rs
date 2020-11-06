@@ -54,17 +54,24 @@ pub(crate) struct FieldAttributes {
     #[darling(default)]
     pub count: Option<String>,
 
-    /// Allows the use of a custom byte reading function. This function must have the same
-    /// return type as SpRead::inner_from_reader
+    /// Allows the use of a custom byte reading expression. The expression must have the same
+    /// return type as the trait implementation (Result<SomeType, SpError>)
     /// Variables in scope :
-    ///     input : The input bytes
-    ///     is_input_le : If input is in little endian
-    ///     count : An Option<number> that contains the number of items to parse
-    /// e.g #[sp(reader="custom_reader(input, is_input_le, count)")]
+    ///     src: Read or Cursor<&[u8]>
+    ///     is_input_le: bool   | If input is in little endian
+    ///     count: Option<usize>| Value of the count attribute's field
+    /// e.g #[sp(reader="custom_reader(src, is_input_le, count)")]
     #[darling(default)]
     pub reader: Option<String>,
 
-    /// Allows the use of a custom byte writing function.
+    /// Allows the use of a custom byte writing expression. The expression must have the same
+    /// return type as the trait implementation (Result<usize, SpError>)
+    /// Variables in scope :
+    ///     _self: &self        | Reference to the current type
+    ///     is_output_le: bool  | If output is little endian
+    ///     prepend_count: bool | If you should prepend count
+    ///     dst: Write          | The destination of the write
+    /// e.g #[sp(reader="custom_writer(_self, is_input_le, count, dst)")]
     #[darling(default)]
     pub writer: Option<String>,
 

@@ -75,7 +75,7 @@ pub trait SpReadRawMut<'b> {
         Self: Sized;
 }
 
-/// Parses T from a Reader (File,TcpStream, etc...)
+/// Parses T from a reader (File,TcpStream, etc...)
 ///
 /// This trait is most usefull when the bytes are coming from some kind of IO stream.
 /// When possible, it is recommend to use SpReadRaw[Mut] instead for better performance.

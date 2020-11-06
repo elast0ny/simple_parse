@@ -215,8 +215,9 @@ fn generate_field_write(
                 };
                 quote! {
                     {
-                        let input = #ref_mut #field_ident;
+                        let _self = #ref_mut #field_ident;
                         let is_output_le = #is_output_le;
+                        let prepend_count = #prepend_count;
                         #s
                     }
                 }
