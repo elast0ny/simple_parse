@@ -1,10 +1,13 @@
 [package]
 name = "simple_parse_derive"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["ElasT0ny <elast0ny00@gmail.com>"]
 edition = "2018"
 description = "A macro derive crate that allows conversion between arbitrary bytes into Rust types and vice-versa"
 license = "MIT OR Apache-2.0"
+
+documentation = "https://docs.rs/simple_parse-derive"
+repository  = "https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

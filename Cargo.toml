@@ -3,7 +3,7 @@ name = "simple_parse"
 version = "0.4.1"
 authors = ["ElasT0ny <elast0ny00@gmail.com>"]
 edition = "2018"
-description = "A derive macro that allows conversion between arbitrary bytes into Rust types and vice-versa"
+description = "A declarative converter for Rust type to and from binary"
 license = "MIT OR Apache-2.0"
 
 #Extra fields for crates.io
