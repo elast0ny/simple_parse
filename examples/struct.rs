@@ -9,6 +9,7 @@ pub struct SomeStruct<'a> {
     _ndwords: &'a u16,
     some_field: u8,
     some_string: &'a str,
+    // The vec.len() value of this field is at the start of the struct
     #[sp(count = "_ndwords", endian = "big")]
     dwords: Vec<u32>,
 }
