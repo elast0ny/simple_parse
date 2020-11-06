@@ -1,429 +1,340 @@
 use crate::{SpError, SpRead, SpReadRaw, SpReadRawMut, SpWrite};
 use std::convert::TryInto;
 use std::io::{Cursor, Read, Write};
+use std::sync::atomic::*;
 
-/* Slices */
-macro_rules! ImplSpTraits {
+/* Primitive Types */
+
+/// Read -> type
+macro_rules! reader_to_primitive {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        // Create dst
+        let _ = $count;
+        let mut val_dst = <$typ>::default();
+        let dst = unsafe {
+            std::slice::from_raw_parts_mut(
+                (&mut val_dst) as *mut $typ as *mut u8,
+                std::mem::size_of::<$typ>(),
+            )
+        };
+
+        // Read into dst
+        if $src.read(dst).is_err() {
+            return Err(SpError::NotEnoughSpace);
+        }
+
+        // Convert endianness if needed
+        let val = if $is_input_le {
+            if cfg!(target_endian = "big") {
+                val_dst.swap_bytes()
+            } else {
+                val_dst
+            }
+        } else {
+            if cfg!(target_endian = "little") {
+                val_dst.swap_bytes()
+            } else {
+                val_dst
+            }
+        };
+
+        Ok(val)
+    }};
+}
+/// &[u8] -> type
+macro_rules! slice_to_primitive {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let val_ref = <&$typ>::$parse_func($src, $is_input_le, $count)?;
+        let val = if $is_input_le {
+            val_ref.to_le()
+        } else {
+            val_ref.to_be()
+        };
+        Ok(val)
+    }};
+}
+/// &[u8] -> &type
+macro_rules! slice_to_ref_primitive {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let _ = $count;
+        let _ = $is_input_le;
+        let idx = $src.position();
+        // Size check
+        let bytes = $src.get_ref();
+        if idx + std::mem::size_of::<$inner_typ>() as u64 > bytes.len() as u64 {
+            return Err(SpError::NotEnoughSpace);
+        }
+        // Cast to reference
+        let val = unsafe { &*(bytes.as_ptr().add(idx.try_into().unwrap()) as *const $inner_typ) };
+        // Move cursor forward
+        $src.set_position(idx + std::mem::size_of::<$inner_typ>() as u64);
+        Ok(val)
+    }};
+}
+/// &[u8] -> &mut type
+macro_rules! slice_to_mutref_primitive {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let ref_val =
+            slice_to_ref_primitive!($typ, $inner_typ, $parse_func, $src, $is_input_le, $count)?;
+        #[allow(clippy::cast_ref_to_mut)]
+        let val = unsafe { &mut *(ref_val as *const $inner_typ as *mut $inner_typ) };
+        Ok(val)
+    }};
+}
+/// &[u8] -> & [type]
+macro_rules! slice_to_refslice_primitive {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let num_items = match $count {
+            Some(v) => v as u64,
+            None => <u64>::$parse_func($src, $is_input_le, $count)?,
+        };
+        let sz_needed = num_items * std::mem::size_of::<$inner_typ>() as u64;
+        let idx = $src.position();
+        // Size check
+        let bytes = $src.get_ref();
+        if idx + sz_needed > bytes.len() as u64 {
+            return Err(SpError::NotEnoughSpace);
+        }
+        let val = unsafe {
+            std::slice::from_raw_parts(
+                bytes.as_ptr().add(idx.try_into().unwrap()) as *const $inner_typ,
+                num_items.try_into().unwrap(),
+            )
+        };
+        $src.set_position(idx + sz_needed);
+        Ok(val)
+    }};
+}
+/// &[u8] -> &mut [type]
+macro_rules! slice_to_mutrefslice_primitive {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let ref_val = slice_to_refslice_primitive!(
+            $typ,
+            $inner_typ,
+            $parse_func,
+            $src,
+            $is_input_le,
+            $count
+        )?;
+        let val = unsafe {
+            std::slice::from_raw_parts_mut(
+                ref_val.as_ptr() as *const $inner_typ as *mut $inner_typ,
+                ref_val.len(),
+            )
+        };
+        Ok(val)
+    }};
+}
+/// Writes T into dst
+macro_rules! primitive_to_writer {
+    ($self:ident $(as $as_typ:ty)?, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
+        let _ = $prepend_count;
+        let value = if $is_output_le {
+            $self.to_le_bytes()
+        } else {
+            $self.to_be_bytes()
+        };
+        let bytes = value.as_ref();
+        match $dst.write(bytes) {
+            Ok(v) => Ok(v),
+            Err(_) => Err(SpError::NotEnoughSpace),
+        }
+    }};
+}
+/// Implements all possible permutations for primitive types
+macro_rules! impl_primitive {
     ($typ:ty) => {
-        // Self from reader
-        impl SpRead for $typ {
-            fn inner_from_reader<R: Read + ?Sized>(
-                src: &mut R,
-                is_input_le: bool,
-                _count: Option<usize>,
-            ) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                // Create dst
-                let mut val_dst = <$typ>::default();
-                let dst = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        (&mut val_dst) as *mut $typ as *mut u8,
-                        std::mem::size_of::<$typ>(),
-                    )
-                };
+        // Read - > Self
+        impl_SpRead!($typ, _, reader_to_primitive);
 
-                // Read into dst
-                if src.read(dst).is_err() {
-                    return Err(SpError::NotEnoughSpace);
-                }
+        // SpReadRaw* -> Self
+        impl_SpReadRaw!($typ, _, slice_to_primitive);
+        impl_SpReadRawMut!($typ, _, slice_to_primitive);
 
-                // Convert endianness if needed
-                let val = if is_input_le {
-                    if cfg!(target_endian = "big") {
-                        val_dst.swap_bytes()
-                    } else {
-                        val_dst
-                    }
-                } else {
-                    if cfg!(target_endian = "little") {
-                        val_dst.swap_bytes()
-                    } else {
-                        val_dst
-                    }
-                };
+        // Impl SpReadRaw* -> &[Self]
+        impl_SpReadRaw!(&[$typ], $typ, slice_to_refslice_primitive);
+        impl_SpReadRawMut!(&[$typ], $typ, slice_to_refslice_primitive);
+        impl_SpReadRawMut!(&mut [$typ], $typ, slice_to_mutrefslice_primitive);
 
-                Ok(val)
-            }
-            fn from_reader<R: Read + ?Sized>(src: &mut R) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                Self::inner_from_reader(src, true, None)
-            }
-        }
-        // Self from bytes
-        impl<'b> SpReadRaw<'b> for $typ {
-            fn inner_from_slice(
-                src: &mut Cursor<&'b [u8]>,
-                is_input_le: bool,
-                count: Option<usize>,
-            ) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                let val_ref = <&Self>::inner_from_slice(src, is_input_le, count)?;
-                
-                let val = if is_input_le {
-                    val_ref.to_le()
-                } else {
-                    val_ref.to_be()
-                };
+        // Impl SpReadRaw* to &Self
+        impl_SpReadRaw!(&$typ, $typ, slice_to_ref_primitive);
+        impl_SpReadRawMut!(&$typ, $typ, slice_to_ref_primitive);
+        impl_SpReadRawMut!(&mut $typ, $typ, slice_to_mutref_primitive);
 
-                // Get reference and deref it to get the value
-                Ok(val)
-            }
-            fn from_slice(src: &mut Cursor<&'b [u8]>) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                <Self>::inner_from_slice(src, true, None)
-            }
-        }
-        // &Self from bytes
-        impl<'b> SpReadRaw<'b> for &'b $typ {
-            fn inner_from_slice(
-                src: &mut Cursor<&'b [u8]>,
-                _is_input_le: bool,
-                _count: Option<usize>,
-            ) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                let idx = src.position();
-                // Size check
-                let bytes = src.get_ref();
-                if idx + std::mem::size_of::<$typ>() as u64 > bytes.len() as u64 {
-                    return Err(SpError::NotEnoughSpace);
-                }
-                // Cast to reference
-                let val = unsafe { &*(bytes.as_ptr().add(idx.try_into().unwrap()) as *const $typ) };
-                // Move cursor forward
-                src.set_position(idx + std::mem::size_of::<$typ>() as u64);
-                Ok(val)
-            }
-            fn from_slice(src: &mut Cursor<&'b [u8]>) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                <Self>::inner_from_slice(src, true, None)
-            }
-        }
-        // $[Self] from bytes
-        impl<'b> SpReadRaw<'b> for &[$typ] {
-            fn inner_from_slice(
-                src: &mut Cursor<&'b [u8]>,
-                is_input_le: bool,
-                count: Option<usize>,
-            ) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                // Either count is passed to us or we use prepended value before contents
-                let num_items = match count {
-                    Some(v) => v as u64,
-                    None => {
-                        <u64>::inner_from_slice(src, is_input_le, count)?
-                    }
-                };
-                let sz_needed = num_items * std::mem::size_of::<$typ>() as u64;
-                let idx = src.position();
-                // Size check
-                let bytes = src.get_ref();
-                if idx + sz_needed > bytes.len() as u64 {
-                    return Err(SpError::NotEnoughSpace);
-                }
-                let val = unsafe {
-                    std::slice::from_raw_parts(
-                        bytes.as_ptr().add(idx.try_into().unwrap()) as *const $typ,
-                        num_items.try_into().unwrap(),
-                    )
-                };
-                src.set_position(idx + sz_needed);
-                Ok(val)
-            }
-            fn from_slice(src: &mut Cursor<&'b [u8]>) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                <Self>::inner_from_slice(src, true, None)
-            }
-        }
-        // Self from mut bytes
-        impl<'b> SpReadRawMut<'b> for $typ {
-            fn inner_from_mut_slice(
-                src: &mut Cursor<&'b mut [u8]>,
-                is_input_le: bool,
-                count: Option<usize>,
-            ) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                // Get reference and deref it to get the value
-                Ok(*(<&mut Self>::inner_from_mut_slice(src, is_input_le, count)?))
-            }
-            fn from_mut_slice(src: &mut Cursor<&'b mut [u8]>) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                <Self>::inner_from_mut_slice(src, true, None)
-            }
-        }
-        // &Self from mut bytes
-        impl<'b> SpReadRawMut<'b> for &'b $typ {
-            fn inner_from_mut_slice(
-                src: &mut Cursor<&'b mut [u8]>,
-                is_input_le: bool,
-                count: Option<usize>,
-            ) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                Ok(<&mut $typ>::inner_from_mut_slice(src, is_input_le, count)?)
-            }
-            fn from_mut_slice(src: &mut Cursor<&'b mut [u8]>) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                <Self>::inner_from_mut_slice(src, true, None)
-            }
-        }
-        // &[Self] from mut bytes
-        impl<'b> SpReadRawMut<'b> for &'b [$typ] {
-            fn inner_from_mut_slice(
-                src: &mut Cursor<&'b mut [u8]>,
-                is_input_le: bool,
-                count: Option<usize>,
-            ) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                // Either count is passed to us or we use prepended value before contents
-                let num_items = match count {
-                    Some(v) => v as u64,
-                    None => {
-                        <u64>::inner_from_mut_slice(src, is_input_le, count)?
-                    }
-                };
-                let sz_needed = num_items * std::mem::size_of::<$typ>() as u64;
-                let idx = src.position();
-                // Size check
-                let bytes = src.get_mut();
-                if idx + sz_needed > bytes.len() as u64 {
-                    return Err(SpError::NotEnoughSpace);
-                }
-                let val = unsafe {
-                    std::slice::from_raw_parts(
-                        bytes.as_ptr().add(idx.try_into().unwrap()) as *mut $typ,
-                        num_items.try_into().unwrap(),
-                    )
-                };
-                src.set_position(idx + sz_needed);
-                Ok(val)
-            }
-            fn from_mut_slice(src: &mut Cursor<&'b mut [u8]>) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                <Self>::inner_from_mut_slice(src, true, None)
-            }
-        }
-        // &mut Self from mut bytes
-        impl<'b> SpReadRawMut<'b> for &'b mut $typ {
-            fn inner_from_mut_slice(
-                src: &mut Cursor<&'b mut [u8]>,
-                _is_input_le: bool,
-                _count: Option<usize>,
-            ) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                let idx = src.position();
-                // Size check
-                let bytes = src.get_ref();
-                if idx + std::mem::size_of::<$typ>() as u64 > bytes.len() as u64 {
-                    return Err(SpError::NotEnoughSpace);
-                }
-                // Cast to reference
-                let val =
-                    unsafe { &mut *(bytes.as_ptr().add(idx.try_into().unwrap()) as *mut $typ) };
-                // Move cursor forward
-                src.set_position(idx + std::mem::size_of::<$typ>() as u64);
-                Ok(val)
-            }
-            fn from_mut_slice(src: &mut Cursor<&'b mut [u8]>) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                <Self>::inner_from_mut_slice(src, true, None)
-            }
-        }
-        // &mut [Self] from mut bytes
-        impl<'b> SpReadRawMut<'b> for &'b mut [$typ] {
-            fn inner_from_mut_slice(
-                src: &mut Cursor<&'b mut [u8]>,
-                is_input_le: bool,
-                count: Option<usize>,
-            ) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                // Either count is passed to us or we use prepended value before contents
-                let num_items = match count {
-                    Some(v) => v as u64,
-                    None => {
-                        <u64>::inner_from_mut_slice(src, is_input_le, count)?
-                    }
-                };
-                let sz_needed = num_items * std::mem::size_of::<$typ>() as u64;
-                let idx = src.position();
-                // Size check
-                let bytes = src.get_mut();
-                if idx + sz_needed > bytes.len() as u64 {
-                    return Err(SpError::NotEnoughSpace);
-                }
-                let val = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        bytes.as_mut_ptr().add(idx.try_into().unwrap()) as *mut $typ,
-                        num_items.try_into().unwrap(),
-                    )
-                };
-                src.set_position(idx + sz_needed);
-                Ok(val)
-            }
-            fn from_mut_slice(src: &mut Cursor<&'b mut [u8]>) -> Result<Self, crate::SpError>
-            where
-                Self: Sized,
-            {
-                <Self>::inner_from_mut_slice(src, true, None)
-            }
-        }
-        // Self into writer
-        impl SpWrite for $typ {
-            fn inner_to_writer<W: Write + ?Sized>(
-                &self,
-                is_output_le: bool,
-                _prepend_count: bool,
-                dst: &mut W,
-            ) -> Result<usize, crate::SpError> {
-                let value = if is_output_le {
-                    self.to_le_bytes()
-                } else {
-                    self.to_be_bytes()
-                };
-                let bytes = value.as_ref();
-                match dst.write(bytes) {
-                    Ok(v) => Ok(v),
-                    Err(_) => Err(SpError::NotEnoughSpace),
-                }
-            }
-
-            fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-                self.inner_to_writer(true, true, dst)
-            }
-        }
-        // &Self into writer
-        impl SpWrite for &$typ {
-            fn inner_to_writer<W: Write + ?Sized>(
-                &self,
-                is_output_le: bool,
-                prepend_count: bool,
-                dst: &mut W,
-            ) -> Result<usize, crate::SpError> {
-                (**self).inner_to_writer(is_output_le, prepend_count, dst)
-            }
-
-            fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-                self.inner_to_writer(true, true, dst)
-            }
-        }
-        // &[Self] into writer
-        impl SpWrite for &[$typ] {
-            fn inner_to_writer<W: Write + ?Sized>(
-                &self,
-                is_output_le: bool,
-                prepend_count: bool,
-                dst: &mut W,
-            ) -> Result<usize, crate::SpError> {
-                let mut total_sz = 0;
-                // Write size as u64
-                if prepend_count {
-                    // Use default settings for inner types
-                    total_sz += (self.len() as u64).inner_to_writer(true, true, dst)?;
-                }
-
-                for val in self.iter() {
-                    total_sz += val.inner_to_writer(is_output_le, prepend_count, dst)?;
-                }
-                
-                Ok(total_sz)
-            }
-
-            fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-                self.inner_to_writer(true, true, dst)
-            }
-        }
-        // &mut Self into writer
-        impl SpWrite for &mut $typ {
-            fn inner_to_writer<W: Write + ?Sized>(
-                &self,
-                is_output_le: bool,
-                prepend_count: bool,
-                dst: &mut W,
-            ) -> Result<usize, crate::SpError> {
-                (**self).inner_to_writer(is_output_le, prepend_count, dst)
-            }
-
-            fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-                self.inner_to_writer(true, true, dst)
-            }
-        }
-        // &mut [Self] into writer
-        impl SpWrite for &mut [$typ] {
-            fn inner_to_writer<W: Write + ?Sized>(
-                &self,
-                is_output_le: bool,
-                prepend_count: bool,
-                dst: &mut W,
-            ) -> Result<usize, crate::SpError> {
-                (self as &[$typ]).inner_to_writer(is_output_le, prepend_count, dst)
-            }
-            fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-                self.inner_to_writer(true, true, dst)
-            }
-        }
+        // Write
+        impl_SpWrite!($typ, primitive_to_writer);
     };
 }
 
-ImplSpTraits!(u8);
-ImplSpTraits!(u16);
-ImplSpTraits!(u32);
-ImplSpTraits!(u64);
-ImplSpTraits!(u128);
-ImplSpTraits!(usize);
-ImplSpTraits!(i8);
-ImplSpTraits!(i16);
-ImplSpTraits!(i32);
-ImplSpTraits!(i64);
-ImplSpTraits!(i128);
-ImplSpTraits!(isize);
+impl_primitive!(u8);
+impl_primitive!(u16);
+impl_primitive!(u32);
+impl_primitive!(u64);
+impl_primitive!(u128);
+impl_primitive!(usize);
+impl_primitive!(i8);
+impl_primitive!(i16);
+impl_primitive!(i32);
+impl_primitive!(i64);
+impl_primitive!(i128);
+impl_primitive!(isize);
 
-/* bool */
+/* Atomics */
+
+/// Read -> AtomicT
+macro_rules! reader_to_atomic {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = reader_to_primitive!($inner_typ, _, $parse_func, $src, $is_input_le, $count)?;
+        Ok(<$typ>::new(inner))
+    }};
+}
+/// &[u8] -> AtomicT
+macro_rules! slice_to_atomic {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = slice_to_primitive!($inner_typ, _, $parse_func, $src, $is_input_le, $count)?;
+        Ok(<$typ>::new(inner))
+    }};
+}
+/// &[u8] -> &AtomicT
+macro_rules! slice_to_ref_atomic {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = slice_to_ref_primitive!(
+            &$inner_typ,
+            $inner_typ,
+            $parse_func,
+            $src,
+            $is_input_le,
+            $count
+        )?;
+        Ok(unsafe { &*(inner as *const _ as *const _) })
+    }};
+}
+/// &[u8] -> &mut AtomicT
+macro_rules! slice_to_mutref_atomic {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = slice_to_mutref_primitive!(
+            &mut $inner_typ,
+            $inner_typ,
+            $parse_func,
+            $src,
+            $is_input_le,
+            $count
+        )?;
+        Ok(unsafe { &mut *(inner as *mut _ as *mut _) })
+    }};
+}
+/// &[u8] -> & [AtomicT]
+macro_rules! slice_to_refslice_atomic {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = slice_to_refslice_primitive!(
+            $inner_typ,
+            $inner_typ,
+            $parse_func,
+            $src,
+            $is_input_le,
+            $count
+        )?;
+        Ok(unsafe { std::slice::from_raw_parts(inner.as_ptr() as *const _, inner.len()) })
+    }};
+}
+/// &[u8] -> &mut [AtomicT]
+macro_rules! slice_to_mutrefslice_atomic {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = slice_to_mutrefslice_primitive!(
+            $inner_typ,
+            $inner_typ,
+            $parse_func,
+            $src,
+            $is_input_le,
+            $count
+        )?;
+        Ok(unsafe { std::slice::from_raw_parts_mut(inner.as_mut_ptr() as *mut _, inner.len()) })
+    }};
+}
+/// Writes AtomicT into dst
+macro_rules! atomic_to_writer {
+    ($self:ident $(as $as_typ:ty)?, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
+        let val = $self.load(Ordering::Relaxed);
+        primitive_to_writer!(val, $is_output_le, $prepend_count, $dst)
+    }};
+}
+
+/// Implements all possible permutations for AtomicT types
+macro_rules! impl_atomic {
+    ($typ:ty, $as_typ:ty) => {
+        // Read - > Self
+        impl_SpRead!($typ, $as_typ, reader_to_atomic);
+
+        // SpReadRaw* -> Self
+        impl_SpReadRaw!($typ, $as_typ, slice_to_atomic);
+        impl_SpReadRawMut!($typ, $as_typ, slice_to_atomic);
+
+        // Impl SpReadRaw* -> &[Self]
+        impl_SpReadRaw!(&[$typ], $as_typ, slice_to_refslice_atomic);
+        impl_SpReadRawMut!(&[$typ], $as_typ, slice_to_refslice_atomic);
+        impl_SpReadRawMut!(&mut [$typ], $as_typ, slice_to_mutrefslice_atomic);
+
+        // Impl SpReadRaw* to &Self
+        impl_SpReadRaw!(&$typ, $as_typ, slice_to_ref_atomic);
+        impl_SpReadRawMut!(&$typ, $as_typ, slice_to_ref_atomic);
+        impl_SpReadRawMut!(&mut $typ, $as_typ, slice_to_mutref_atomic);
+
+        // Write
+        impl_SpWrite!($typ as $as_typ, atomic_to_writer);
+    };
+}
+
+impl_atomic!(AtomicI8, i8);
+impl_atomic!(AtomicI16, i16);
+impl_atomic!(AtomicI32, i32);
+impl_atomic!(AtomicI64, i64);
+impl_atomic!(AtomicIsize, isize);
+impl_atomic!(AtomicU8, u8);
+impl_atomic!(AtomicU16, u16);
+impl_atomic!(AtomicU32, u32);
+impl_atomic!(AtomicU64, u64);
+impl_atomic!(AtomicUsize, usize);
+
+/* Bools */
+
+/* Read / &[u8] / &mut [u8] -> bool */
 macro_rules! bool_read {
-    ($parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
         let val = u8::$parse_func($src, $is_input_le, $count)?;
         Ok(val != 0)
     }};
 }
-// Write bool into writer
-macro_rules! bool_SpWrite {
-    ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
+// bool -> Write
+macro_rules! bool_to_writer {
+    ($self:ident $(as $as_typ:ty)?, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
         let val = if *$self { 1u8 } else { 0u8 };
         val.inner_to_writer($is_output_le, $prepend_count, $dst)
     }};
 }
-impl_SpRead!(bool, bool_read);
-impl_SpReadRaw!(bool, bool_read);
-impl_SpReadRawMut!(bool, bool_read);
-impl_SpWrite!(bool, bool_SpWrite);
+
+impl_SpRead!(bool, _, bool_read);
+impl_SpReadRaw!(bool, _, bool_read);
+impl_SpReadRawMut!(bool, _, bool_read);
+impl_SpWrite!(bool, bool_to_writer);
+
+macro_rules! atomicbool_read {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = <$inner_typ>::$parse_func($src, $is_input_le, $count)?;
+        Ok(<$typ>::new(inner))
+    }};
+}
+// bool -> Write
+macro_rules! atomicbool_to_writer {
+    ($self:ident $(as $as_typ:ty)?, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
+        let val = & $self.load(Ordering::Relaxed);
+        bool_to_writer!(val, $is_output_le, $prepend_count, $dst)
+    }};
+}
+
+impl_SpRead!(AtomicBool, bool, atomicbool_read);
+impl_SpReadRaw!(AtomicBool, bool, atomicbool_read);
+impl_SpReadRawMut!(AtomicBool, bool, atomicbool_read);
+impl_SpWrite!(AtomicBool as bool, atomicbool_to_writer);
+
+// Nothing about slices or references since the internal repr of a bool
+// is unknown
