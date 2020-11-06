@@ -46,36 +46,6 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 Ok(written_len)
             }
         }
-
-        impl #impl_generics simple_parse::SpWrite for &#name #ty_generics #where_clause {
-            fn to_writer<W: std::io::Write + ?Sized>(&self, dst: &mut W) -> Result<usize, ::simple_parse::SpError> {
-                self.inner_to_writer(true, true, dst)
-            }
-            fn inner_to_writer<W: std::io::Write + ?Sized>(
-                &self,
-                is_output_le: bool,
-                prepend_count: bool,
-                dst: &mut W,
-            ) -> Result<usize, ::simple_parse::SpError>
-            {
-                (**self).inner_to_writer(is_output_le, prepend_count, dst)
-            }
-        }
-
-        impl #impl_generics simple_parse::SpWrite for &mut #name #ty_generics #where_clause {
-            fn to_writer<W: std::io::Write + ?Sized>(&self, dst: &mut W) -> Result<usize, ::simple_parse::SpError> {
-                self.inner_to_writer(true, true, dst)
-            }
-            fn inner_to_writer<W: std::io::Write + ?Sized>(
-                &self,
-                is_output_le: bool,
-                prepend_count: bool,
-                dst: &mut W,
-            ) -> Result<usize, ::simple_parse::SpError>
-            {
-                (**self).inner_to_writer(is_output_le, prepend_count, dst)
-            }
-        }
     };
 
     //println!("{}", expanded.to_string());
