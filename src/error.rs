@@ -5,7 +5,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy)]
 pub enum SpError {
     /// The data we attempted to decode did not contain a valid enum variant
-    UnknownEnumVariant(usize),
+    UnknownEnumVariant,
     /// The is not enough space to decode into T or to write T into the writer
     NotEnoughSpace,
     /// An annotated count field's type is too small to fit the number of elements
@@ -16,8 +16,8 @@ pub enum SpError {
 impl fmt::Display for SpError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            SpError::UnknownEnumVariant(ref id) => {
-                write!(f, "Encountered unknown enum variant ID : {}", id)
+            SpError::UnknownEnumVariant => {
+                write!(f, "Encountered invalid enum variant ID")
             }
             SpError::NotEnoughSpace => {
                 write!(f, "Not enough bytes in the buffer to parse wanted type")

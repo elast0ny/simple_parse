@@ -31,7 +31,7 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     let expanded = quote! {
         impl #impl_generics ::simple_parse::SpWrite for #name #ty_generics #where_clause {
-            fn to_writer<W: std::io::Write + ?Sized>(&self, dst: &mut W) -> Result<usize, ::simple_parse::SpError> {
+            fn to_writer<W: std::io::Write + ?Sized>(&self, dst: &mut W) -> std::result::Result<usize, ::simple_parse::SpError> {
                 self.inner_to_writer(true, true, dst)
             }
             fn inner_to_writer<W: std::io::Write + ?Sized>(
@@ -39,7 +39,7 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 is_output_le: bool,
                 prepend_count: bool,
                 dst: &mut W,
-            ) -> Result<usize, ::simple_parse::SpError>
+            ) -> std::result::Result<usize, ::simple_parse::SpError>
             {
                 let mut written_len: usize = 0;
                 #generated_code
@@ -70,10 +70,10 @@ fn generate_struct_write(
 /// for each of its fields
 fn generate_enum_write(input: &DeriveInput, data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
     let name = &input.ident;
-    let var_id_type = match attrs.id_type {
-        None => quote! {u8},
-        Some(t) => t.parse().unwrap(),
-    };
+    let var_id_type: syn::Type = syn::parse_str(match attrs.id_type {
+        Some(ref s) => s.as_str(),
+        None => "u8",
+    }).unwrap();
 
     let default_is_le: bool = match attrs.endian {
         None => cfg!(target_endian = "little"),

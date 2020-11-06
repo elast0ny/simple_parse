@@ -37,7 +37,7 @@ pub(crate) fn generate(
         ReaderType::Reader => {
             quote! {
             impl ::simple_parse::SpRead for #name #ty_generics #where_clause {
-                fn from_reader<R: std::io::Read + ?Sized>(src: &mut R) -> Result<Self, ::simple_parse::SpError>
+                fn from_reader<R: std::io::Read + ?Sized>(src: &mut R) -> std::result::Result<Self, ::simple_parse::SpError>
                 where
                     Self: Sized
                 {
@@ -47,7 +47,7 @@ pub(crate) fn generate(
                     src: &mut R,
                     is_input_le: bool,
                     count: Option<usize>,
-                ) -> Result<Self, ::simple_parse::SpError>
+                ) -> std::result::Result<Self, ::simple_parse::SpError>
                 where
                     Self: Sized
                 {
@@ -65,7 +65,7 @@ pub(crate) fn generate(
 
             quote! {
                 impl #ty_generics ::simple_parse::SpReadRaw<#lifetime> for #name #ty_generics #where_clause {
-                    fn from_slice(src: &mut std::io::Cursor<&#lifetime [u8]>) -> Result<Self, ::simple_parse::SpError>
+                    fn from_slice(src: &mut std::io::Cursor<&#lifetime [u8]>) -> std::result::Result<Self, ::simple_parse::SpError>
                     where
                         Self: Sized,
                     {
@@ -75,7 +75,7 @@ pub(crate) fn generate(
                         src: &mut std::io::Cursor<&#lifetime [u8]>,
                         is_input_le: bool,
                         count: Option<usize>,
-                    ) -> Result<Self, ::simple_parse::SpError>
+                    ) -> std::result::Result<Self, ::simple_parse::SpError>
                     where
                         Self: Sized,
                     {
@@ -94,7 +94,7 @@ pub(crate) fn generate(
 
             quote! {
                 impl #ty_generics ::simple_parse::SpReadRawMut<#lifetime> for #name #ty_generics #where_clause {
-                    fn from_mut_slice(src: &mut std::io::Cursor<&#lifetime mut [u8]>) -> Result<Self, ::simple_parse::SpError>
+                    fn from_mut_slice(src: &mut std::io::Cursor<&#lifetime mut [u8]>) -> std::result::Result<Self, ::simple_parse::SpError>
                     where
                         Self: Sized,
                     {
@@ -104,7 +104,7 @@ pub(crate) fn generate(
                         src: &mut std::io::Cursor<&#lifetime mut [u8]>,
                         is_input_le: bool,
                         count: Option<usize>,
-                    ) -> Result<Self, ::simple_parse::SpError>
+                    ) -> std::result::Result<Self, ::simple_parse::SpError>
                     where
                         Self: Sized,
                     {
@@ -149,13 +149,11 @@ fn generate_enum_read(
     attrs: &EnumAttributes,
 ) -> TokenStream {
     let name = &input.ident;
-    let id_type = syn::Ident::new(
-        match attrs.id_type {
+    
+    let id_type: syn::Type = syn::parse_str(match attrs.id_type {
             Some(ref s) => s.as_str(),
             None => "u8",
-        },
-        proc_macro2::Span::call_site(),
-    );
+        }).unwrap();
 
     let default_is_le: bool = match attrs.endian {
         None => cfg!(target_endian = "little"),
@@ -183,29 +181,30 @@ fn generate_enum_read(
 
     // Add match case to handle unknown IDs
     variant_code_gen.extend(quote! {
-        unknown_id => {
-            Err(::simple_parse::SpError::UnknownEnumVariant(unknown_id as _))
+        _ => {
+            use std::convert::TryInto;
+            Err(::simple_parse::SpError::UnknownEnumVariant)
         }
     });
 
     match reader_type {
         ReaderType::Reader => {
             quote! {
-                match #id_type::inner_from_reader(src, #default_is_le, None)? {
+                match <#id_type>::inner_from_reader(src, #default_is_le, None)? {
                     #variant_code_gen
                 }
             }
         }
         ReaderType::Raw => {
             quote! {
-                match #id_type::inner_from_slice(src, #default_is_le, None)? {
+                match <#id_type>::inner_from_slice(src, #default_is_le, None)? {
                     #variant_code_gen
                 }
             }
         }
         ReaderType::RawMut => {
             quote! {
-                match #id_type::inner_from_mut_slice(src, #default_is_le, None)? {
+                match <#id_type>::inner_from_mut_slice(src, #default_is_le, None)? {
                     #variant_code_gen
                 }
             }
