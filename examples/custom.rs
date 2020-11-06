@@ -11,7 +11,7 @@ pub enum Message {
     ServerHello {
         #[sp(
             reader = "string_read(src, 8)",
-            writer = "string_write(input, 8, dst)"
+            writer = "string_write(_self, 8, dst)"
         )]
         banner: String,
     },
@@ -20,7 +20,7 @@ pub enum Message {
     ClientLogin {
         #[sp(
             reader = "string_read(src, 8)",
-            writer = "string_write(input, 8, dst)"
+            writer = "string_write(_self, 8, dst)"
         )]
         username: String,
     },
