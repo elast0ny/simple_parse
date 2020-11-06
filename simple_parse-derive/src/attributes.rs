@@ -1,7 +1,7 @@
 use crate::*;
 
 /// 
-/// This file contains a list of valid dervie attributes that simple_parse supports
+/// This file contains a list of valid derive attributes that simple_parse supports
 /// 
 
 /* Enums */

@@ -15,22 +15,30 @@ pub (crate) enum ReaderType {
 }
 
 #[proc_macro_derive(SpRead, attributes(sp))]
+/// Implements SpRead on the type
+/// 
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_read(input: TokenStream) -> TokenStream {
     read::generate(input, ReaderType::Reader)
 }
 #[proc_macro_derive(SpReadRaw, attributes(sp))]
+/// Implements SpReadRaw on the type
+/// 
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_readraw(input: TokenStream) -> TokenStream {
     read::generate(input, ReaderType::Raw)
 }
 #[proc_macro_derive(SpReadRawMut, attributes(sp))]
+/// Implements SpReadRawMut on the type
+/// 
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_readrawmut(input: TokenStream) -> TokenStream {
     read::generate(input, ReaderType::RawMut)
 }
 
 #[proc_macro_derive(SpWrite, attributes(sp))]
+/// Implements SpWrite on the type
+/// 
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_write(input: TokenStream) -> TokenStream {
     write::generate(input)
