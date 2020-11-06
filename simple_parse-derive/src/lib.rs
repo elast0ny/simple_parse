@@ -5,6 +5,8 @@ use syn::{Field, Fields, GenericParam, Generics};
 
 mod read;
 mod write;
+mod attributes;
+pub (crate) use attributes::*;
 
 pub (crate) enum ReaderType {
     Reader,
@@ -13,84 +15,25 @@ pub (crate) enum ReaderType {
 }
 
 #[proc_macro_derive(SpRead, attributes(sp))]
+/// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_read(input: TokenStream) -> TokenStream {
     read::generate(input, ReaderType::Reader)
 }
 #[proc_macro_derive(SpReadRaw, attributes(sp))]
+/// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_readraw(input: TokenStream) -> TokenStream {
     read::generate(input, ReaderType::Raw)
 }
 #[proc_macro_derive(SpReadRawMut, attributes(sp))]
+/// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_readrawmut(input: TokenStream) -> TokenStream {
     read::generate(input, ReaderType::RawMut)
 }
 
 #[proc_macro_derive(SpWrite, attributes(sp))]
+/// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_write(input: TokenStream) -> TokenStream {
     write::generate(input)
-}
-
-#[derive(Debug, FromDeriveInput)]
-#[darling(attributes(sp))]
-pub(crate) struct StructAttributes {
-    /// Specifies the endiannes for the whole enum. The data will
-    /// be converted to the native endianness when necessary.
-    #[darling(default)]
-    endian: Option<String>,
-}
-
-#[derive(Debug, FromDeriveInput)]
-#[darling(attributes(sp))]
-pub(crate) struct EnumAttributes {
-    /// The type used to parse the variant id
-    #[darling(default)]
-    id_type: Option<String>,
-
-    /// Specifies the endiannes for the whole enum. The data will
-    /// be converted to the native endianness when necessary.
-    #[darling(default)]
-    endian: Option<String>,
-}
-
-#[derive(Debug, FromField)]
-#[darling(attributes(sp))]
-pub(crate) struct FieldAttributes {
-    /// Points to the field name/index that contains the number of items to parse for the Vec
-    /// e.g.
-    /// ```Rust
-    /// struct Test {
-    ///     num_options: u8,
-    ///     #[sp(count="num_options")]
-    ///     options: Vec<Options>,
-    /// }
-    /// ```
-    #[darling(default)]
-    count: Option<String>,
-
-    /// Allows the use of a custom byte reading function. This function must have the same
-    /// return type as SpRead::inner_from_reader
-    /// Variables in scope :
-    ///     input : The input bytes
-    ///     is_input_le : If input is in little endian
-    ///     count : An Option<number> that contains the number of items to parse
-    /// e.g #[sp(reader="custom_reader(input, is_input_le, count)")]
-    #[darling(default)]
-    reader: Option<String>,
-
-    /// Allows the use of a custom byte writing function.
-    #[darling(default)]
-    writer: Option<String>,
-
-    /// Specifies the endiannes of the specific field. The data will
-    /// be converted to the native endianness when necessary.
-    #[darling(default)]
-    endian: Option<String>,
-}
-
-#[derive(Debug, FromVariant)]
-#[darling(attributes(sp))]
-pub(crate) struct VariantAttributes {
-    id: usize,
 }
 
 /// Adds a bound to a generic parameter

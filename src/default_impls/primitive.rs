@@ -347,7 +347,7 @@ macro_rules! slice_SpWrite {
     }};
 }
 
-impl_SpReadRaw!(&[T], slice_SpReadRaw, T);
-impl_SpReadRawMut!(&[T], slice_SpReadRawMut, T);
-impl_SpReadRawMut!(&mut [T], slice_SpReadRawMut, T);
+impl_SpReadRaw!(&'b [T], slice_SpReadRaw, T);
+impl_SpReadRawMut!(&'b [T], slice_SpReadRawMut, T);
+impl_SpReadRawMut!(&'b mut [T], slice_SpReadRawMut, T);
 impl_SpWrite!([T], slice_SpWrite, T);

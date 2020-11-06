@@ -11,7 +11,6 @@
 macro_rules! impl_SpRead {
 
     ($typ:ty, $reader:ident $(, $generics:tt $(: $bound:ident $(+ $other:ident)*)*)*) => {
-        /// $typ from reader
         impl<$($generics : SpRead $(+ $bound$(+ $other)*)*),*> SpRead for $typ {
             fn inner_from_reader<R: Read + ?Sized> (
                 src: &mut R,
@@ -44,7 +43,6 @@ macro_rules! impl_SpRead {
 #[macro_use]
 macro_rules! impl_SpReadRaw {
     ($typ:ty, $reader:ident $(, $generics:tt $(: $bound:ident $(+ $other:ident)*)*)*) => {
-        /// $typ from bytes
         impl<'b, $($generics : SpReadRaw<'b> $(+ $bound$(+ $other)*)*),*> SpReadRaw<'b> for $typ {
             fn inner_from_slice(
                 src: &mut Cursor<&'b [u8]>,
@@ -76,7 +74,6 @@ macro_rules! impl_SpReadRaw {
 #[macro_use]
 macro_rules! impl_SpReadRawMut {
     ($typ:ty, $reader:ident $(, $generics:tt $(: $bound:ident $(+ $other:ident)*)*)*) => {
-        /// $typ from mutable bytes
         impl<'b, $($generics : SpReadRawMut<'b> $(+ $bound$(+ $other)*)*),*> SpReadRawMut<'b> for $typ {
             fn inner_from_mut_slice(
                 src: &mut Cursor<&'b mut [u8]>,
