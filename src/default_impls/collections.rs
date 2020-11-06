@@ -38,7 +38,18 @@ macro_rules! vec_read {
 /// Into writer
 macro_rules! vec_SpWrite {
     ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
-        $self.as_slice().inner_to_writer($is_output_le, $prepend_count, $dst)
+        let mut total_sz = 0;
+        // Write size as u64
+        if $prepend_count {
+            // Use default settings for inner types
+            total_sz += ($self.len() as u64).inner_to_writer(true, true, $dst)?;
+        }
+
+        for val in $self.iter() {
+            total_sz += val.inner_to_writer($is_output_le, $prepend_count, $dst)?;
+        }
+        
+        Ok(total_sz)
     }};
 }
 impl_SpRead!(Vec<T>, vec_read, T);

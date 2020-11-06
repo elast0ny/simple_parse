@@ -2,16 +2,7 @@ use crate::{SpError, SpRead, SpReadRaw, SpReadRawMut, SpWrite};
 use std::convert::TryInto;
 use std::io::{Cursor, Read, Write};
 
-// Implements :
-//      Self        SpRead
-//      Self        SpReadRaw
-//      &Self       SpReadRaw
-//      Self        SpReadRawMut
-//      &Self       SpReadRawMut
-//      &mut Self   SpReadRawMut
-//      Self        SpWrite
-//      &Self       SpWrite
-//      &mut Self   SpWrite
+/* Slices */
 macro_rules! ImplSpTraits {
     ($typ:ty) => {
         // Self from reader
@@ -90,7 +81,7 @@ macro_rules! ImplSpTraits {
                 <Self>::inner_from_slice(src, true, None)
             }
         }
-        // Reference to Self from bytes
+        // &Self from bytes
         impl<'b> SpReadRaw<'b> for &'b $typ {
             fn inner_from_slice(
                 src: &mut Cursor<&'b [u8]>,
@@ -110,6 +101,46 @@ macro_rules! ImplSpTraits {
                 let val = unsafe { &*(bytes.as_ptr().add(idx.try_into().unwrap()) as *const $typ) };
                 // Move cursor forward
                 src.set_position(idx + std::mem::size_of::<$typ>() as u64);
+                Ok(val)
+            }
+            fn from_slice(src: &mut Cursor<&'b [u8]>) -> Result<Self, crate::SpError>
+            where
+                Self: Sized,
+            {
+                <Self>::inner_from_slice(src, true, None)
+            }
+        }
+        // $[Self] from bytes
+        impl<'b> SpReadRaw<'b> for &[$typ] {
+            fn inner_from_slice(
+                src: &mut Cursor<&'b [u8]>,
+                is_input_le: bool,
+                count: Option<usize>,
+            ) -> Result<Self, crate::SpError>
+            where
+                Self: Sized,
+            {
+                // Either count is passed to us or we use prepended value before contents
+                let num_items = match count {
+                    Some(v) => v as u64,
+                    None => {
+                        <u64>::inner_from_slice(src, is_input_le, count)?
+                    }
+                };
+                let sz_needed = num_items * std::mem::size_of::<$typ>() as u64;
+                let idx = src.position();
+                // Size check
+                let bytes = src.get_ref();
+                if idx + sz_needed > bytes.len() as u64 {
+                    return Err(SpError::NotEnoughSpace);
+                }
+                let val = unsafe {
+                    std::slice::from_raw_parts(
+                        bytes.as_ptr().add(idx.try_into().unwrap()) as *const $typ,
+                        num_items.try_into().unwrap(),
+                    )
+                };
+                src.set_position(idx + sz_needed);
                 Ok(val)
             }
             fn from_slice(src: &mut Cursor<&'b [u8]>) -> Result<Self, crate::SpError>
@@ -139,7 +170,66 @@ macro_rules! ImplSpTraits {
                 <Self>::inner_from_mut_slice(src, true, None)
             }
         }
-        // Mutatble reference to Self from mut bytes
+        // &Self from mut bytes
+        impl<'b> SpReadRawMut<'b> for &'b $typ {
+            fn inner_from_mut_slice(
+                src: &mut Cursor<&'b mut [u8]>,
+                is_input_le: bool,
+                count: Option<usize>,
+            ) -> Result<Self, crate::SpError>
+            where
+                Self: Sized,
+            {
+                Ok(<&mut $typ>::inner_from_mut_slice(src, is_input_le, count)?)
+            }
+            fn from_mut_slice(src: &mut Cursor<&'b mut [u8]>) -> Result<Self, crate::SpError>
+            where
+                Self: Sized,
+            {
+                <Self>::inner_from_mut_slice(src, true, None)
+            }
+        }
+        // &[Self] from mut bytes
+        impl<'b> SpReadRawMut<'b> for &'b [$typ] {
+            fn inner_from_mut_slice(
+                src: &mut Cursor<&'b mut [u8]>,
+                is_input_le: bool,
+                count: Option<usize>,
+            ) -> Result<Self, crate::SpError>
+            where
+                Self: Sized,
+            {
+                // Either count is passed to us or we use prepended value before contents
+                let num_items = match count {
+                    Some(v) => v as u64,
+                    None => {
+                        <u64>::inner_from_mut_slice(src, is_input_le, count)?
+                    }
+                };
+                let sz_needed = num_items * std::mem::size_of::<$typ>() as u64;
+                let idx = src.position();
+                // Size check
+                let bytes = src.get_mut();
+                if idx + sz_needed > bytes.len() as u64 {
+                    return Err(SpError::NotEnoughSpace);
+                }
+                let val = unsafe {
+                    std::slice::from_raw_parts(
+                        bytes.as_ptr().add(idx.try_into().unwrap()) as *mut $typ,
+                        num_items.try_into().unwrap(),
+                    )
+                };
+                src.set_position(idx + sz_needed);
+                Ok(val)
+            }
+            fn from_mut_slice(src: &mut Cursor<&'b mut [u8]>) -> Result<Self, crate::SpError>
+            where
+                Self: Sized,
+            {
+                <Self>::inner_from_mut_slice(src, true, None)
+            }
+        }
+        // &mut Self from mut bytes
         impl<'b> SpReadRawMut<'b> for &'b mut $typ {
             fn inner_from_mut_slice(
                 src: &mut Cursor<&'b mut [u8]>,
@@ -169,8 +259,8 @@ macro_rules! ImplSpTraits {
                 <Self>::inner_from_mut_slice(src, true, None)
             }
         }
-        // Reference to Self from mut bytes
-        impl<'b> SpReadRawMut<'b> for &'b $typ {
+        // &mut [Self] from mut bytes
+        impl<'b> SpReadRawMut<'b> for &'b mut [$typ] {
             fn inner_from_mut_slice(
                 src: &mut Cursor<&'b mut [u8]>,
                 is_input_le: bool,
@@ -179,7 +269,28 @@ macro_rules! ImplSpTraits {
             where
                 Self: Sized,
             {
-                Ok(<&mut $typ>::inner_from_mut_slice(src, is_input_le, count)?)
+                // Either count is passed to us or we use prepended value before contents
+                let num_items = match count {
+                    Some(v) => v as u64,
+                    None => {
+                        <u64>::inner_from_mut_slice(src, is_input_le, count)?
+                    }
+                };
+                let sz_needed = num_items * std::mem::size_of::<$typ>() as u64;
+                let idx = src.position();
+                // Size check
+                let bytes = src.get_mut();
+                if idx + sz_needed > bytes.len() as u64 {
+                    return Err(SpError::NotEnoughSpace);
+                }
+                let val = unsafe {
+                    std::slice::from_raw_parts_mut(
+                        bytes.as_mut_ptr().add(idx.try_into().unwrap()) as *mut $typ,
+                        num_items.try_into().unwrap(),
+                    )
+                };
+                src.set_position(idx + sz_needed);
+                Ok(val)
             }
             fn from_mut_slice(src: &mut Cursor<&'b mut [u8]>) -> Result<Self, crate::SpError>
             where
@@ -188,7 +299,7 @@ macro_rules! ImplSpTraits {
                 <Self>::inner_from_mut_slice(src, true, None)
             }
         }
-        // Write Self into writer
+        // Self into writer
         impl SpWrite for $typ {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
@@ -212,7 +323,7 @@ macro_rules! ImplSpTraits {
                 self.inner_to_writer(true, true, dst)
             }
         }
-        // Write &Self into writer
+        // &Self into writer
         impl SpWrite for &$typ {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
@@ -227,7 +338,33 @@ macro_rules! ImplSpTraits {
                 self.inner_to_writer(true, true, dst)
             }
         }
-        // Write &mut Self into writer
+        // &[Self] into writer
+        impl SpWrite for &[$typ] {
+            fn inner_to_writer<W: Write + ?Sized>(
+                &self,
+                is_output_le: bool,
+                prepend_count: bool,
+                dst: &mut W,
+            ) -> Result<usize, crate::SpError> {
+                let mut total_sz = 0;
+                // Write size as u64
+                if prepend_count {
+                    // Use default settings for inner types
+                    total_sz += (self.len() as u64).inner_to_writer(true, true, dst)?;
+                }
+
+                for val in self.iter() {
+                    total_sz += val.inner_to_writer(is_output_le, prepend_count, dst)?;
+                }
+                
+                Ok(total_sz)
+            }
+
+            fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
+                self.inner_to_writer(true, true, dst)
+            }
+        }
+        // &mut Self into writer
         impl SpWrite for &mut $typ {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
@@ -238,6 +375,20 @@ macro_rules! ImplSpTraits {
                 (**self).inner_to_writer(is_output_le, prepend_count, dst)
             }
 
+            fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
+                self.inner_to_writer(true, true, dst)
+            }
+        }
+        // &mut [Self] into writer
+        impl SpWrite for &mut [$typ] {
+            fn inner_to_writer<W: Write + ?Sized>(
+                &self,
+                is_output_le: bool,
+                prepend_count: bool,
+                dst: &mut W,
+            ) -> Result<usize, crate::SpError> {
+                (self as &[$typ]).inner_to_writer(is_output_le, prepend_count, dst)
+            }
             fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
                 self.inner_to_writer(true, true, dst)
             }
@@ -276,78 +427,3 @@ impl_SpRead!(bool, bool_read);
 impl_SpReadRaw!(bool, bool_read);
 impl_SpReadRawMut!(bool, bool_read);
 impl_SpWrite!(bool, bool_SpWrite);
-
-/* Slices */
-macro_rules! slice_SpReadRaw {
-    ($parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
-        // Either count is passed to us or we use prepended value before contents
-        let num_items = match $count {
-            Some(v) => v as u64,
-            None => {
-                <u64>::$parse_func($src, $is_input_le, $count)?
-            }
-        };
-        let sz_needed = num_items * std::mem::size_of::<T>() as u64;
-        let idx = $src.position();
-        // Size check
-        let bytes = $src.get_ref();
-        if idx + sz_needed > bytes.len() as u64 {
-            return Err(SpError::NotEnoughSpace);
-        }
-        let val = unsafe {
-            std::slice::from_raw_parts(
-                bytes.as_ptr().add(idx.try_into().unwrap()) as *const T,
-                num_items.try_into().unwrap(),
-            )
-        };
-        $src.set_position(idx + sz_needed);
-        Ok(val)
-    }};
-}
-macro_rules! slice_SpReadRawMut {
-    ($parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
-        // Either count is passed to us or we use prepended value before contents
-        let num_items = match $count {
-            Some(v) => v as u64,
-            None => {
-                <u64>::$parse_func($src, $is_input_le, $count)?
-            }
-        };
-        let sz_needed = num_items * std::mem::size_of::<T>() as u64;
-        let idx = $src.position();
-        // Size check
-        let bytes = $src.get_mut();
-        if idx + sz_needed > bytes.len() as u64 {
-            return Err(SpError::NotEnoughSpace);
-        }
-        let val = unsafe {
-            std::slice::from_raw_parts_mut(
-                bytes.as_mut_ptr().add(idx.try_into().unwrap()) as *mut T,
-                num_items.try_into().unwrap(),
-            )
-        };
-        $src.set_position(idx + sz_needed);
-        Ok(val)
-    }};
-}
-macro_rules! slice_SpWrite {
-    ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
-        let mut total_sz = 0;
-        // Write size as u64
-        if $prepend_count {
-            // Use default settings for inner types
-            total_sz += ($self.len() as u64).inner_to_writer(true, true, $dst)?;
-        }
-
-        for val in $self.iter() {
-            total_sz += val.inner_to_writer($is_output_le, $prepend_count, $dst)?;
-        }
-        
-        Ok(total_sz)
-    }};
-}
-
-impl_SpReadRaw!(&'b [T], slice_SpReadRaw, T);
-impl_SpReadRawMut!(&'b [T], slice_SpReadRawMut, T);
-impl_SpReadRawMut!(&'b mut [T], slice_SpReadRawMut, T);
-impl_SpWrite!([T], slice_SpWrite, T);
