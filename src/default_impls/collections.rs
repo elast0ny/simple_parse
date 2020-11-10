@@ -140,3 +140,44 @@ impl_SpRead!(HashMap<K,V>, _, hashmap_read, K: Eq + Hash, V);
 impl_SpReadRaw!(HashMap<K,V>, _, hashmap_read, K: Eq + Hash, V);
 impl_SpReadRawMut!(HashMap<K,V>, _, hashmap_read, K: Eq + Hash, V);
 impl_SpWrite!(HashMap<K,V>, hashmap_SpWrite, K: Eq + Hash, V);
+
+
+/* Option<T> */
+/// From reader
+macro_rules! option_read {
+    ($typ:ty, $inner_typ:ty,$parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    
+        let is_some = <bool>::$parse_func($src, true, None)?;
+
+        if !is_some {
+            return Ok(None);
+        }
+
+        Ok(Some(<$inner_typ>::$parse_func($src, $is_input_le, $count)?))
+    }};
+}
+
+/// Into writer
+macro_rules! option_write {
+    ($self:ident $(as $as_typ:ty)?, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
+        let mut total_sz = 1;
+
+        match $self {
+            Some(v) => {
+                (true).inner_to_writer(true, false, $dst)?;
+                total_sz += v.inner_to_writer($is_output_le, $prepend_count, $dst)?;
+            },
+            None => {
+                (false).inner_to_writer(true, false, $dst)?;
+            }
+        }
+
+        
+        Ok(total_sz)
+    }};
+}
+impl_SpRead!(Option<T>, T, option_read, T);
+impl_SpReadRaw!(Option<T>, T, option_read, T);
+impl_SpReadRawMut!(Option<T>, T, option_read, T);
+impl_SpWrite!(Option<T>,option_write, T);
+
