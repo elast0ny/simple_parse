@@ -2,6 +2,7 @@ use crate::{SpError, SpRead, SpReadRaw, SpReadRawMut, SpWrite};
 use std::convert::TryInto;
 use std::io::{Cursor, Read, Write};
 use std::sync::atomic::*;
+use std::num::*;
 
 /* Primitive Types */
 
@@ -294,6 +295,149 @@ impl_atomic!(AtomicU16, u16);
 impl_atomic!(AtomicU32, u32);
 impl_atomic!(AtomicU64, u64);
 impl_atomic!(AtomicUsize, usize);
+
+/* NonZero */
+
+/// Read -> NonZeroT
+macro_rules! reader_to_nonzero {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = reader_to_primitive!($inner_typ, _, $parse_func, $src, $is_input_le, $count)?;
+        match <$typ>::new(inner) {
+            Some(s) => Ok(s),
+            None => Err(SpError::InvalidBytes),
+        }
+    }};
+}
+/// &[u8] -> NonZeroT
+macro_rules! slice_to_nonzero {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = slice_to_primitive!($inner_typ, _, $parse_func, $src, $is_input_le, $count)?;
+        match <$typ>::new(inner) {
+            Some(s) => Ok(s),
+            None => Err(SpError::InvalidBytes),
+        }
+    }};
+}
+/// &[u8] -> &NonZeroT
+macro_rules! slice_to_ref_nonzero {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = slice_to_ref_primitive!(
+            &$inner_typ,
+            $inner_typ,
+            $parse_func,
+            $src,
+            $is_input_le,
+            $count
+        )?;
+        unsafe {
+            if *inner == 0 {
+                Err(SpError::InvalidBytes)
+            } else {
+                Ok(&*(inner as *const _ as *const _))
+            }
+        }
+    }};
+}
+/// &[u8] -> &mut NonZeroT
+macro_rules! slice_to_mutref_nonzero {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = slice_to_mutref_primitive!(
+            &mut $inner_typ,
+            $inner_typ,
+            $parse_func,
+            $src,
+            $is_input_le,
+            $count
+        )?;
+        unsafe {
+            if *inner == 0 {
+                Err(SpError::InvalidBytes)
+            } else {
+                Ok(&mut *(inner as *mut _ as *mut _))
+            }
+        }
+    }};
+}
+/// &[u8] -> & [NonZeroT]
+macro_rules! slice_to_refslice_nonzero {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = slice_to_refslice_primitive!(
+            $inner_typ,
+            $inner_typ,
+            $parse_func,
+            $src,
+            $is_input_le,
+            $count
+        )?;
+        for v in inner.iter() {
+            if *v == 0 {
+                return Err(SpError::InvalidBytes);
+            }
+        }
+        Ok(unsafe { std::slice::from_raw_parts(inner.as_ptr() as *const _, inner.len()) })
+    }};
+}
+/// &[u8] -> &mut [NonZeroT]
+macro_rules! slice_to_mutrefslice_nonzero {
+    ($typ:ty, $inner_typ:ty, $parse_func:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        let inner = slice_to_mutrefslice_primitive!(
+            $inner_typ,
+            $inner_typ,
+            $parse_func,
+            $src,
+            $is_input_le,
+            $count
+        )?;
+        for v in inner.iter() {
+            if *v == 0 {
+                return Err(SpError::InvalidBytes);
+            }
+        }
+        Ok(unsafe { std::slice::from_raw_parts_mut(inner.as_mut_ptr() as *mut _, inner.len()) })
+    }};
+}
+/// Writes NonZeroT into dst
+macro_rules! nonzero_to_writer {
+    ($self:ident $(as $as_typ:ty)?, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
+        let val = $self.get();
+        primitive_to_writer!(val, $is_output_le, $prepend_count, $dst)
+    }};
+}
+/// Implements all possible permutations for NonZeroT types
+macro_rules! impl_nonzero {
+    ($typ:ty, $as_typ:ty) => {
+        // Read - > Self
+        impl_SpRead!($typ, $as_typ, reader_to_nonzero);
+
+        // SpReadRaw* -> Self
+        impl_SpReadRaw!($typ, $as_typ, slice_to_nonzero);
+        impl_SpReadRawMut!($typ, $as_typ, slice_to_nonzero);
+
+        // Impl SpReadRaw* -> &[Self]
+        impl_SpReadRaw!(&[$typ], $as_typ, slice_to_refslice_nonzero);
+        impl_SpReadRawMut!(&[$typ], $as_typ, slice_to_refslice_nonzero);
+        impl_SpReadRawMut!(&mut [$typ], $as_typ, slice_to_mutrefslice_nonzero);
+
+        // Impl SpReadRaw* to &Self
+        impl_SpReadRaw!(&$typ, $as_typ, slice_to_ref_nonzero);
+        impl_SpReadRawMut!(&$typ, $as_typ, slice_to_ref_nonzero);
+        impl_SpReadRawMut!(&mut $typ, $as_typ, slice_to_mutref_nonzero);
+
+        // Write
+        impl_SpWrite!($typ as $as_typ, nonzero_to_writer);
+    };
+}
+
+impl_nonzero!(NonZeroI8, i8);
+impl_nonzero!(NonZeroI16, i16);
+impl_nonzero!(NonZeroI32, i32);
+impl_nonzero!(NonZeroI64, i64);
+impl_nonzero!(NonZeroIsize, isize);
+impl_nonzero!(NonZeroU8, u8);
+impl_nonzero!(NonZeroU16, u16);
+impl_nonzero!(NonZeroU32, u32);
+impl_nonzero!(NonZeroU64, u64);
+impl_nonzero!(NonZeroUsize, usize);
 
 /* Bools */
 
