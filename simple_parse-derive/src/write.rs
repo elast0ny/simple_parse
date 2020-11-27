@@ -70,9 +70,38 @@ fn generate_struct_write(
 /// for each of its fields
 fn generate_enum_write(input: &DeriveInput, data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
     let name = &input.ident;
-    let var_id_type: syn::Type = syn::parse_str(match attrs.id_type {
+
+    let mut seen_ids: HashMap<usize, String> = HashMap::new();
+    // Go through every field to find the biggest variant ID
+    let mut next_variant_id:usize = 0;
+    for variant in data.variants.iter() {
+        let var_attrs: darling::Result<VariantAttributes> = FromVariant::from_variant(&variant);
+        let variant_name = &variant.ident;
+        let variant_id = match var_attrs {
+            Ok(v) if v.id.is_some() => {
+                let specified_id = v.id.unwrap();
+                next_variant_id = specified_id + 1;
+                specified_id
+            },
+            _ => {
+                let cur = next_variant_id;
+                next_variant_id += 1;
+                cur
+            },
+        };
+
+        if let Some(v) = seen_ids.insert(variant_id, variant_name.to_string()) {
+            panic!("{0}.{1} has the same ID as {0}.{2} : {3}", name.to_string(), variant_name.to_string(), v, variant_id);
+        }
+    }
+    let id_type: syn::Type = syn::parse_str(match attrs.id_type {
         Some(ref s) => s.as_str(),
-        None => "u8",
+        None => {
+            if next_variant_id != 0 {
+                next_variant_id -= 1;
+            }
+            smallest_type_for_num(next_variant_id)
+        },
     }).unwrap();
 
     let default_is_le: bool = match attrs.endian {
@@ -80,22 +109,31 @@ fn generate_enum_write(input: &DeriveInput, data: &DataEnum, attrs: EnumAttribut
         Some(ref e) => is_lower_endian(e),
     };
 
-
     let mut variant_code_gen = TokenStream::new();
-
+    let mut auto_variant_id:usize = 0;
     // Create a match case for every variant
     for variant in data.variants.iter() {
-        let var_attrs: VariantAttributes = FromVariant::from_variant(&variant).unwrap();
+        let var_attrs: darling::Result<VariantAttributes> = FromVariant::from_variant(&variant);
         let variant_name = &variant.ident;
-        let variant_id =
-            syn::LitInt::new(&var_attrs.id.to_string(), proc_macro2::Span::call_site());
-
+        let variant_id = match var_attrs {
+            Ok(v) if v.id.is_some() => {
+                let specified_id = v.id.unwrap();
+                auto_variant_id = specified_id + 1;
+                specified_id
+            },
+            _ => {
+                let cur = auto_variant_id;
+                auto_variant_id += 1;
+                cur
+            },
+        };
+        let variant_id = syn::LitInt::new(&variant_id.to_string(), proc_macro2::Span::call_site());
         let field_list = generate_field_list(&variant.fields, None, None);
         let field_write_code = generate_field_write(&variant.fields, None, default_is_le);
 
         variant_code_gen.extend(quote! {
             #name::#variant_name#field_list => {
-                let mut var_id: #var_id_type = #variant_id;
+                let mut var_id: #id_type = #variant_id;
                 written_len += var_id.inner_to_writer(#default_is_le, true, dst)?;
                 #field_write_code
             },

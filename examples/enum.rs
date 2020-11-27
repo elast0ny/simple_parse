@@ -2,13 +2,8 @@ use simple_parse::{SpRead, SpReadRawMut, SpWrite};
 
 #[derive(SpRead, SpReadRawMut, SpWrite, Debug)]
 pub enum Message {
-    #[sp(id = "1")]
     ServerHello(u32, u32),
-
-    #[sp(id = "2")]
     ClientLogin,
-
-    #[sp(id = "3")]
     ServerDisconnect {
         #[sp(endian = "big")]
         timestamp: u32,
@@ -19,10 +14,10 @@ pub enum Message {
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Buffer that contains 2 messages
     let orig_buf: &[u8] = &[
-        0x01, // ServerHello
+        0x00, // ServerHello
         0x12, 0x23, 0x34, 0x45, // ServerHello.0
         0x12, 0x34, 0x56, 0x78, // ServerHello.1
-        0x03, // ServerDisconnect
+        0x02, // ServerDisconnect
         0xDE, 0xAD, 0xBE, 0xEF, //ServerDisconnect.timestamp
         0x2,0,0,0,0,0,0,0,  //ServerDisconnect.num_options
         0x11, //ServerDisconnect.option[0]
@@ -75,7 +70,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(
             &dst,
             &[
-                0x03, // ServerDisconnect
+                0x02, // ServerDisconnect
                 0xDE, 0xAD, 0xBE, 0xEF, //ServerDisconnect.timestamp
                 0x3,0,0,0,0,0,0,0,  //ServerDisconnect.num_options
                 0x11, //ServerDisconnect.option[0]

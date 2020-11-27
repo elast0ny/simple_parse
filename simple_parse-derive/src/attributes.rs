@@ -24,7 +24,8 @@ pub(crate) struct EnumAttributes {
 #[darling(attributes(sp))]
 pub(crate) struct VariantAttributes {
     /// The numerical representation of this variant.
-    pub id: usize,
+    /// When not specified, C style ids are used (First variant starts at 0, subsequent are [prev + 1])
+    pub id: Option<usize>,
 }
 
 /* Structs */

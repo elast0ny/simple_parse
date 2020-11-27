@@ -185,3 +185,17 @@ fn generate_field_list(
         _ => unreachable!(),
     }
 }
+
+
+// Returns the small unsigned integer type for a given usize value
+pub (crate) fn smallest_type_for_num(num: usize) -> &'static str {
+    if num <= u8::MAX as _ {
+        "u8"
+    } else if num <= u16::MAX as _ {
+        "u16"
+    } else if num <= u32::MAX as _ {
+        "u32"
+    } else {
+        "u64"
+    } 
+}

@@ -7,7 +7,6 @@ use simple_parse::{SpError, SpRead, SpWrite};
 
 #[derive(SpRead, SpWrite, Debug)]
 pub enum Message {
-    #[sp(id = "1")]
     ServerHello {
         #[sp(
             reader = "string_read(src, 8)",
@@ -15,8 +14,6 @@ pub enum Message {
         )]
         banner: String,
     },
-
-    #[sp(id = "2")]
     ClientLogin {
         #[sp(
             reader = "string_read(src, 8)",
@@ -28,9 +25,9 @@ pub enum Message {
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let msg_stream: &[u8] = &[
-        0x01, // ServerHello
+        0x00, // ServerHello
         b'H', b'i', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // banner
-        0x02, // ClientLogin
+        0x01, // ClientLogin
         b'E', b'l', b'a', b's', b't', b'0', b'n', b'y', // username
     ];
 
@@ -49,7 +46,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         // Validity check
         msg.to_writer(&mut dst)?;
-        assert_eq!(&dst, &[0x02, // ClientLogin
+        assert_eq!(&dst, &[0x01, // ClientLogin
             b'E', b'l', b'a', b's', b't', b'0', b'n', b'y']);
     }
 

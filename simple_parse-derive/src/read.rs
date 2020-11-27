@@ -2,7 +2,7 @@ use darling::FromDeriveInput;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, parse_quote, Data, DataEnum, DataStruct, DeriveInput, Fields};
-
+use std::collections::HashMap;
 use crate::*;
 
 pub(crate) fn generate(
@@ -150,24 +150,35 @@ fn generate_enum_read(
 ) -> TokenStream {
     let name = &input.ident;
     
-    let id_type: syn::Type = syn::parse_str(match attrs.id_type {
-            Some(ref s) => s.as_str(),
-            None => "u8",
-        }).unwrap();
-
     let default_is_le: bool = match attrs.endian {
         None => cfg!(target_endian = "little"),
         Some(ref e) => is_lower_endian(e),
     };
 
+    let mut seen_ids: HashMap<usize, String> = HashMap::new();
     let mut variant_code_gen = TokenStream::new();
-
+    let mut next_variant_id:usize = 0;
     // Create a match case for every variant
     for variant in data.variants.iter() {
-        let var_attrs: VariantAttributes = FromVariant::from_variant(&variant).unwrap();
+        let var_attrs: darling::Result<VariantAttributes> = FromVariant::from_variant(&variant);
         let variant_name = &variant.ident;
-        let variant_id =
-            syn::LitInt::new(&var_attrs.id.to_string(), proc_macro2::Span::call_site());
+        let variant_id = match var_attrs {
+            Ok(v) if v.id.is_some() => {
+                let specified_id = v.id.unwrap();
+                next_variant_id = specified_id + 1;
+                specified_id
+            },
+            _ => {
+                let cur = next_variant_id;
+                next_variant_id += 1;
+                cur
+            },
+        };
+        if let Some(v) = seen_ids.insert(variant_id, variant_name.to_string()) {
+            panic!("{0}.{1} has the same ID as {0}.{2} : {3}", name.to_string(), variant_name.to_string(), v, variant_id);
+        }
+        let variant_id = syn::LitInt::new(&variant_id.to_string(), proc_macro2::Span::call_site());
+
         let (field_idents, read_code) =
             generate_field_read(reader_type, &variant.fields, default_is_le);
         let field_list = generate_field_list(&variant.fields, Some(&field_idents), None);
@@ -182,10 +193,20 @@ fn generate_enum_read(
     // Add match case to handle unknown IDs
     variant_code_gen.extend(quote! {
         _ => {
-            use std::convert::TryInto;
             Err(::simple_parse::SpError::UnknownEnumVariant)
         }
     });
+
+    
+    let id_type: syn::Type = syn::parse_str(match attrs.id_type {
+        Some(ref s) => s.as_str(),
+        None => {
+            if next_variant_id != 0 {
+                next_variant_id -= 1;
+            }
+            smallest_type_for_num(next_variant_id)
+        },
+    }).unwrap();
 
     match reader_type {
         ReaderType::Reader => {
