@@ -1,48 +1,110 @@
+use crate::*;
 use darling::FromDeriveInput;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, parse_quote, Data, DataEnum, DataStruct, DeriveInput, Fields};
-use std::collections::HashMap;
-use crate::*;
+use syn::{parse_quote, Data, DataEnum, DeriveInput, Fields};
+
+fn generate_validate_size_code(static_size: &TokenStream, reader_type: &ReaderType) -> TokenStream {
+    let mut log_call = TokenStream::new();
+
+    match reader_type {
+        ReaderType::Reader => {
+            if cfg!(feature = "verbose") {
+                log_call = quote! {
+                    ::log::debug!("read({})", #static_size);
+                };
+            }
+            quote! {
+                let mut tmp = [0u8; #static_size];
+                if #static_size > 0 {
+                    #log_call
+                    // Copy from reader into our stack variable
+                    if src.read_exact(&mut tmp).is_err() {
+                        return Err(::simple_parse::SpError::NotEnoughSpace);
+                    }
+                    // Return pointer to stack var
+                    checked_bytes = tmp.as_mut_ptr();
+                }
+            }
+        },
+        _ => {
+            if cfg!(feature = "verbose") {
+                log_call = quote! {
+                    ::log::debug!("Check src.len({}) < {}", (bytes.len() as u64) - idx, (#static_size));
+                };
+            }
+            quote! {
+                let idx = src.position();
+                let bytes = src.get_ref();
+                {#log_call}
+                if (bytes.len() as u64) - idx < (#static_size) as u64 {
+                    return Err(::simple_parse::SpError::NotEnoughSpace);
+                }
+                checked_bytes = unsafe{bytes.as_ptr().add(idx as usize) as _};
+                src.set_position(idx + ((#static_size) as u64));
+            }
+        }
+    }
+}
 
 pub(crate) fn generate(
-    input: proc_macro::TokenStream,
+    input: &mut DeriveInput,
     reader_type: ReaderType,
-) -> proc_macro::TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let generated_read;
+) -> proc_macro2::TokenStream {
+    let mut log_call: TokenStream = TokenStream::new();
+    let unsafe_read_code: TokenStream;
+    let result_obj: TokenStream;
 
     // Generate the code that implements SpRead
     match input.data {
         // Parse as a struct
         Data::Struct(ref contents) => {
-            let attrs = FromDeriveInput::from_derive_input(&input).unwrap();
-            generated_read = generate_struct_read(&reader_type, &input, contents, &attrs);
+            let attrs: StructAttributes = FromDeriveInput::from_derive_input(&input).unwrap();
+            let (read, fields) = generate_fields_read(
+                &reader_type,
+                &contents.fields,
+                attrs.endian.as_deref()
+            );
+            unsafe_read_code = read;
+            result_obj = quote! {Self{#fields}};
+
+            if cfg!(feature = "verbose") {
+                let name = &input.ident;
+                log_call = quote! {
+                    ::log::debug!("Parsing `struct {}`", stringify!(#name));
+                };
+            }
         }
         // Parse as enum
         Data::Enum(ref contents) => {
             let attrs = FromDeriveInput::from_derive_input(&input).unwrap();
-            generated_read = generate_enum_read(&reader_type, &input, contents, &attrs);
+            let (read, res) = generate_enum_read(&reader_type, contents, &attrs);
+            unsafe_read_code = read;
+            result_obj = res;
+
+            if cfg!(feature = "verbose") {
+                let name = &input.ident;
+                log_call = quote! {
+                    ::log::debug!("Parsing `enum {}`", stringify!(#name));
+                };
+            }
         }
         // Unhandled derive usage
         _ => unimplemented!("Cannot derive on this type"),
     };
 
-    let name = input.ident;
-    let generics = add_trait_bounds(input.generics, parse_quote! {simple_parse::SpRead});
-    let (_impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    add_trait_bounds(&mut input.generics, parse_quote! {simple_parse::SpRead});
+    let name = &input.ident;
+    let (_impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    let static_validation_code =
+        generate_validate_size_code(&quote! {<#name as ::simple_parse::SpOptHints>::STATIC_SIZE}, &reader_type);
 
     // Generate impl block for TYPE and &TYPE
-    let expanded = match reader_type {
+    let mut res = match reader_type {
         ReaderType::Reader => {
             quote! {
             impl ::simple_parse::SpRead for #name #ty_generics #where_clause {
-                fn from_reader<R: std::io::Read + ?Sized>(src: &mut R) -> std::result::Result<Self, ::simple_parse::SpError>
-                where
-                    Self: Sized
-                {
-                    <#name>::inner_from_reader(src, true, None)
-                }
                 fn inner_from_reader<R: std::io::Read + ?Sized>(
                     src: &mut R,
                     is_input_le: bool,
@@ -51,13 +113,29 @@ pub(crate) fn generate(
                 where
                     Self: Sized
                 {
-                    #generated_read
+                    {#log_call}
+                    let mut checked_bytes: *mut u8 = std::ptr::null_mut();
+                    #static_validation_code
+                    unsafe {
+                        Self::inner_from_reader_unchecked(checked_bytes, src, is_input_le, count)
+                    }
                 }
+                unsafe fn inner_from_reader_unchecked<R: std::io::Read + ?Sized>(
+                    mut checked_bytes: *mut u8,
+                    src: &mut R,
+                    is_input_le: bool,
+                    count: Option<usize>,
+                ) -> Result<Self, ::simple_parse::SpError>
+                where
+                    Self: Sized + ::simple_parse::SpOptHints {
+                        #unsafe_read_code
+                        Ok(#result_obj)
+                    }
             }}
         }
         ReaderType::Raw => {
             // Use the first lifetime parameter as the one bound to the input bytes
-            let lifetime = if let Some(lt) = generics.lifetimes().next() {
+            let lifetime = if let Some(lt) = input.generics.lifetimes().next() {
                 quote! {#lt}
             } else {
                 quote! {'_}
@@ -65,12 +143,6 @@ pub(crate) fn generate(
 
             quote! {
                 impl #ty_generics ::simple_parse::SpReadRaw<#lifetime> for #name #ty_generics #where_clause {
-                    fn from_slice(src: &mut std::io::Cursor<&#lifetime [u8]>) -> std::result::Result<Self, ::simple_parse::SpError>
-                    where
-                        Self: Sized,
-                    {
-                        <Self>::inner_from_slice(src, true, None)
-                    }
                     fn inner_from_slice(
                         src: &mut std::io::Cursor<&#lifetime [u8]>,
                         is_input_le: bool,
@@ -79,14 +151,31 @@ pub(crate) fn generate(
                     where
                         Self: Sized,
                     {
-                        #generated_read
+                        {#log_call}
+                        let mut checked_bytes: *mut u8 = std::ptr::null_mut();
+                        #static_validation_code
+                        unsafe {
+                            Self::inner_from_slice_unchecked(checked_bytes, src, is_input_le, count)
+                        }
                     }
+
+                    unsafe fn inner_from_slice_unchecked(
+                        mut checked_bytes: *const u8,
+                        src: &mut Cursor<&#lifetime [u8]>,
+                        is_input_le: bool,
+                        count: Option<usize>,
+                    ) -> Result<Self, ::simple_parse::SpError>
+                    where
+                        Self: Sized + ::simple_parse::SpOptHints {
+                            #unsafe_read_code
+                            Ok(#result_obj)
+                        }
                 }
             }
         }
         ReaderType::RawMut => {
             // Use the first lifetime parameter as the one bound to the input bytes
-            let lifetime = if let Some(lt) = generics.lifetimes().next() {
+            let lifetime = if let Some(lt) = input.generics.lifetimes().next() {
                 quote! {#lt}
             } else {
                 quote! {'_}
@@ -94,12 +183,6 @@ pub(crate) fn generate(
 
             quote! {
                 impl #ty_generics ::simple_parse::SpReadRawMut<#lifetime> for #name #ty_generics #where_clause {
-                    fn from_mut_slice(src: &mut std::io::Cursor<&#lifetime mut [u8]>) -> std::result::Result<Self, ::simple_parse::SpError>
-                    where
-                        Self: Sized,
-                    {
-                        <Self>::inner_from_mut_slice(src, true, None)
-                    }
                     fn inner_from_mut_slice(
                         src: &mut std::io::Cursor<&#lifetime mut [u8]>,
                         is_input_le: bool,
@@ -108,166 +191,113 @@ pub(crate) fn generate(
                     where
                         Self: Sized,
                     {
-                        #generated_read
+                        {#log_call}
+                        let mut checked_bytes: *mut u8 = std::ptr::null_mut();
+                        #static_validation_code
+                        unsafe {
+                            Self::inner_from_slice_unchecked(checked_bytes, src, is_input_le, count)
+                        }
                     }
+
+                    unsafe fn inner_from_mut_slice_unchecked(
+                        mut checked_bytes: *mut u8,
+                        src: &mut Cursor<&#lifetime mut [u8]>,
+                        is_input_le: bool,
+                        count: Option<usize>,
+                    ) -> Result<Self, ::simple_parse::SpError>
+                    where
+                        Self: Sized + ::simple_parse::SpOptHints {
+                            #unsafe_read_code
+                            Ok(#result_obj)
+                        }
                 }
             }
         }
     };
 
-    //println!("{}", expanded.to_string());
-    proc_macro::TokenStream::from(expanded)
+    #[cfg(feature = "print-generated")]
+    println!("{}", res.to_string());
+
+    // Automatically impl `SpOptHints` when deriving `SpRead`
+    if let ReaderType::Reader = reader_type {
+        let generate_opt_hints = crate::opt_hints::generate(input);
+        res.extend(quote! {
+            #generate_opt_hints
+        })
+    }
+    res
 }
 
 /// Generates code that parses bytes into a struct
-fn generate_struct_read(
-    reader_type: &ReaderType,
-    input: &DeriveInput,
-    data: &DataStruct,
-    attrs: &StructAttributes,
-) -> TokenStream {
-    let name = &input.ident;
-    let default_is_le: bool = match attrs.endian {
-        None => cfg!(target_endian = "little"),
-        Some(ref e) => is_lower_endian(e),
-    };
-
-    let (field_idents, read_code) = generate_field_read(reader_type, &data.fields, default_is_le);
-    let field_list = generate_field_list(&data.fields, Some(&field_idents), None);
-
-    quote! {
-        #read_code
-        Ok(#name#field_list)
-    }
-}
-
-/// Generates the code that parse bytes into an enum variant
-fn generate_enum_read(
-    reader_type: &ReaderType,
-    input: &DeriveInput,
-    data: &DataEnum,
-    attrs: &EnumAttributes,
-) -> TokenStream {
-    let name = &input.ident;
-    
-    let default_is_le: bool = match attrs.endian {
-        None => cfg!(target_endian = "little"),
-        Some(ref e) => is_lower_endian(e),
-    };
-
-    let mut seen_ids: HashMap<usize, String> = HashMap::new();
-    let mut variant_code_gen = TokenStream::new();
-    let mut next_variant_id:usize = 0;
-    // Create a match case for every variant
-    for variant in data.variants.iter() {
-        let var_attrs: darling::Result<VariantAttributes> = FromVariant::from_variant(&variant);
-        let variant_name = &variant.ident;
-        let variant_id = match var_attrs {
-            Ok(v) if v.id.is_some() => {
-                let specified_id = v.id.unwrap();
-                next_variant_id = specified_id + 1;
-                specified_id
-            },
-            _ => {
-                let cur = next_variant_id;
-                next_variant_id += 1;
-                cur
-            },
-        };
-        if let Some(v) = seen_ids.insert(variant_id, variant_name.to_string()) {
-            panic!("{0}.{1} has the same ID as {0}.{2} : {3}", name.to_string(), variant_name.to_string(), v, variant_id);
-        }
-        let variant_id = syn::LitInt::new(&variant_id.to_string(), proc_macro2::Span::call_site());
-
-        let (field_idents, read_code) =
-            generate_field_read(reader_type, &variant.fields, default_is_le);
-        let field_list = generate_field_list(&variant.fields, Some(&field_idents), None);
-        variant_code_gen.extend(quote! {
-            #variant_id => {
-                #read_code
-                Ok(#name::#variant_name#field_list)
-            },
-        });
-    }
-
-    // Add match case to handle unknown IDs
-    variant_code_gen.extend(quote! {
-        _ => {
-            Err(::simple_parse::SpError::UnknownEnumVariant)
-        }
-    });
-
-    
-    let id_type: syn::Type = syn::parse_str(match attrs.id_type {
-        Some(ref s) => s.as_str(),
-        None => {
-            if next_variant_id != 0 {
-                next_variant_id -= 1;
-            }
-            smallest_type_for_num(next_variant_id)
-        },
-    }).unwrap();
-
-    match reader_type {
-        ReaderType::Reader => {
-            quote! {
-                match <#id_type>::inner_from_reader(src, #default_is_le, None)? {
-                    #variant_code_gen
-                }
-            }
-        }
-        ReaderType::Raw => {
-            quote! {
-                match <#id_type>::inner_from_slice(src, #default_is_le, None)? {
-                    #variant_code_gen
-                }
-            }
-        }
-        ReaderType::RawMut => {
-            quote! {
-                match <#id_type>::inner_from_mut_slice(src, #default_is_le, None)? {
-                    #variant_code_gen
-                }
-            }
-        }
-    }
-}
-
-/// Generates the code that calls `from_reader` for the specific field
-/// e.g :
-///     let (rest , field_0) = u8::inner_from_reader(...)?;
-fn generate_field_read(
+fn generate_fields_read(
     reader_type: &ReaderType,
     fields: &Fields,
-    default_is_le: bool,
-) -> (Vec<TokenStream>, TokenStream) {
-    let mut idents = Vec::with_capacity(fields.len());
-    let mut generated_code = TokenStream::new();
+    endian: Option<&str>,
+) -> (TokenStream, TokenStream) {
+    let mut read_code = TokenStream::new();
+    let mut field_list = TokenStream::new();
+    let num_fields = fields.len();
+
+    // No fields
+    if num_fields == 0 {
+        return (read_code, field_list);
+    }
+
+    let default_is_le: bool = match endian {
+        None => cfg!(target_endian = "little"),
+        Some(s) => is_lower_endian(s),
+    };
+
+    let mut hit_first_dyn = false;
+    let mut num_summed_sizes = 0;
+    let mut static_size_code = TokenStream::new();
+    let mut queued_read_code = TokenStream::new();
 
     for (idx, field) in fields.iter().enumerate() {
-        let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
-        let field_ident = generate_field_name(field, idx, None, false);
-        idents.push(field_ident.clone());
+        let field_name = generate_field_name(field, idx, None, false);
+        field_list.extend(quote! {#field_name,});
         let field_type = &field.ty;
+        let field_attrs: FieldAttributes = FromField::from_field(field).unwrap();
+        let is_var_type = is_var_size(field_type, Some(&field_attrs));
 
-        let count_field = match generate_count_field_name(field_attrs.count, fields, None, true) {
+        // Get this field's endianness
+        let is_input_le = match field_attrs.endian {
+            None => default_is_le,
+            Some(ref e) => is_lower_endian(e),
+        };
+
+        if hit_first_dyn {
+            num_summed_sizes += 1;
+            if num_summed_sizes == 1 {
+                static_size_code.extend(quote! {
+                    <#field_type as ::simple_parse::SpOptHints>::STATIC_SIZE
+                });
+            } else {
+                static_size_code.extend(quote! {
+                    + <#field_type as ::simple_parse::SpOptHints>::STATIC_SIZE
+                });
+            }
+        }
+
+        // Get the count field
+        let count_field = match generate_count_field_name(&field_attrs.count, fields, None, true) {
             None => {
                 quote! {
                     None
                 }
             }
             Some(c) => {
+                // Remove the u64 count because #[sp(count)] was provided
+                static_size_code.extend(quote!{
+                    - <::simple_parse::DefaultCountType as ::simple_parse::SpOptHints>::STATIC_SIZE
+                });
                 quote! {Some(#c as _)}
             }
         };
 
-        let is_input_le = match field_attrs.endian {
-            None => default_is_le,
-            Some(ref e) => is_lower_endian(e),
-        };
-
+        // Get custom reader if provided
         let read_call = match field_attrs.reader {
-            Some(s) => {
+            Some(ref s) => {
                 let s: TokenStream = s.parse().unwrap();
                 quote! {
                     {
@@ -277,28 +307,136 @@ fn generate_field_read(
                     }
                 }
             }
-            None => match reader_type {
-                ReaderType::Reader => {
-                    quote! {
-                        <#field_type>::inner_from_reader(src, #is_input_le, #count_field)
-                    }
+            None => {
+                // Call regular function
+                let fn_name = get_parse_fn_name(&reader_type, true);
+                quote! {
+                    <#field_type>::#fn_name(checked_bytes, src, #is_input_le, #count_field)
                 }
-                ReaderType::Raw => {
-                    quote! {
-                        <#field_type>::inner_from_slice(src, #is_input_le, #count_field)
-                    }
-                }
-                ReaderType::RawMut => {
-                    quote! {
-                        <#field_type>::inner_from_mut_slice(src, #is_input_le, #count_field)
-                    }
-                }
-            },
+            }
         };
 
-        generated_code.extend(quote! {
-            let #field_ident: #field_type = #read_call?;
+        queued_read_code.extend(quote! {
+            let #field_name: #field_type = #read_call?;
+        });
+
+        if is_var_type || idx + 1 == num_fields {
+            if hit_first_dyn {
+                let validate_static_size =
+                    generate_validate_size_code(&quote! {#static_size_code}, &reader_type);
+                read_code.extend(quote! {
+                    #validate_static_size
+                });
+
+                num_summed_sizes = 0;
+                // Reset the static size
+                static_size_code = quote! {};
+            }
+            
+            read_code.extend(queued_read_code);
+            queued_read_code = TokenStream::new();
+
+            if is_var_type {
+                hit_first_dyn = true;
+            }
+        } else {
+            // Move the checked_bytes pointer forward for the next field
+            queued_read_code.extend(quote! {
+                unsafe{
+                    checked_bytes = checked_bytes.add(<#field_type as ::simple_parse::SpOptHints>::STATIC_SIZE);
+                }
+            });
+        }
+    }
+
+    (read_code, field_list)
+}
+
+/// Generates the code that parse bytes into an enum variant
+fn generate_enum_read(
+    reader_type: &ReaderType,
+    data: &DataEnum,
+    attrs: &EnumAttributes,
+) -> (TokenStream, TokenStream) {
+    if data.variants.is_empty() {
+        return (quote! {}, quote! {Self});
+    }
+
+    let fn_name = get_parse_fn_name(reader_type, true);
+    let default_is_le: bool = match attrs.endian {
+        None => cfg!(target_endian = "little"),
+        Some(ref e) => is_lower_endian(e),
+    };
+
+    let id_type = get_enum_id_type(data, attrs);
+
+    // Read the id
+    let mut variant_read_code = TokenStream::new();
+    let mut next_variant_id: usize = 0;
+    for variant in data.variants.iter() {
+        let var_attrs: VariantAttributes = FromVariant::from_variant(&variant).unwrap();
+        let variant_name = &variant.ident;
+        let variant_id = match var_attrs.id {
+            Some(id) => {
+                next_variant_id = id + 1;
+                id
+            }
+            _ => {
+                let cur = next_variant_id;
+                next_variant_id += 1;
+                cur
+            }
+        };
+        let variant_id = syn::LitInt::new(&variant_id.to_string(), proc_macro2::Span::call_site());
+
+        let (read_code, field_list) = if !variant.fields.is_empty() {
+            let (read, list) = generate_fields_read(
+                reader_type,
+                &variant.fields,
+                var_attrs.endian.as_deref()
+            );
+            (
+                read,
+                if let syn::Fields::Unnamed(_r) = &variant.fields {
+                    quote! {
+                        (#list)
+                    }
+                } else {
+                    quote! {
+                        {#list}
+                    }
+                },
+            )
+        } else {
+            (TokenStream::new(), TokenStream::new())
+        };
+
+        let log_call = if cfg!(feature = "verbose") {
+            quote! {
+                ::log::debug!("Variant `{}`", stringify!(#variant_name));
+            }
+        } else {
+            quote! {}
+        };
+
+        variant_read_code.extend(quote! {
+            #variant_id => {
+                #log_call
+                #read_code
+                Self::#variant_name#field_list
+            }
         })
     }
-    (idents, generated_code)
+
+    (
+        quote! {
+            let variant_id = <#id_type>::#fn_name(checked_bytes, src, #default_is_le, None)?;
+            checked_bytes = checked_bytes.add(<#id_type as ::simple_parse::SpOptHints>::STATIC_SIZE);
+            let res = match variant_id {
+                #variant_read_code
+                _ => return Err(::simple_parse::SpError::UnknownEnumVariant),
+            };
+        },
+        quote! {res},
+    )
 }

@@ -6,7 +6,8 @@ use crate::*;
 
 /* Enums */
 
-#[derive(Debug, FromDeriveInput)]
+#[derive(Default, Debug, PartialEq)]
+#[derive(FromDeriveInput)]
 #[darling(attributes(sp))]
 /// Attributes that can be use on the top level enum declaration
 pub(crate) struct EnumAttributes {
@@ -20,17 +21,24 @@ pub(crate) struct EnumAttributes {
 }
 
 /// Attributes that can be use on each enum variant.
-#[derive(Debug, FromVariant)]
+#[derive(Default, Debug, PartialEq)]
+#[derive(FromVariant)]
 #[darling(attributes(sp))]
 pub(crate) struct VariantAttributes {
     /// The numerical representation of this variant.
     /// When not specified, C style ids are used (First variant starts at 0, subsequent are [prev + 1])
+    #[darling(default)]
     pub id: Option<usize>,
+
+    /// Specifies the default endiannesss for the whole Variant
+    #[darling(default)]
+    pub endian: Option<String>,
 }
 
 /* Structs */
 
-#[derive(Debug, FromDeriveInput)]
+#[derive(Default, Debug, PartialEq)]
+#[derive(FromDeriveInput)]
 #[darling(attributes(sp))]
 /// Attributes that can be use on the top level struct declaration
 pub(crate) struct StructAttributes {
@@ -39,7 +47,8 @@ pub(crate) struct StructAttributes {
     pub endian: Option<String>,
 }
 
-#[derive(Debug, FromField)]
+#[derive(Default, Debug, PartialEq)]
+#[derive(FromField)]
 #[darling(attributes(sp))]
 /// Attributes that can be use on each field.
 pub(crate) struct FieldAttributes {
@@ -80,4 +89,8 @@ pub(crate) struct FieldAttributes {
     /// be converted to the native endianness when necessary.
     #[darling(default)]
     pub endian: Option<String>,
+
+    /// Specifies whether this field's type is variably sized
+    #[darling(default)]
+    pub var_size: Option<()>
 }

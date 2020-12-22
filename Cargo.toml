@@ -13,5 +13,15 @@ repository  = "https://github.com/elast0ny/simple_parse"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = []
+print-generated = ["simple_parse_derive/print-generated"]
+verbose = ["simple_parse_derive/verbose", "log"]
+
 [dependencies]
-simple_parse_derive = { version = "0.4", path = "simple_parse-derive" }
+simple_parse_derive = { version = "0.5", path = "simple_parse-derive" }
+static_assertions = "1"
+log = {version = "0", optional = true}
+
+[dev-dependencies]
+env_logger = "*"

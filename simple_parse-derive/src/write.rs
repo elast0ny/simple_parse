@@ -2,21 +2,17 @@ use darling::FromDeriveInput;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::HashMap;
-use syn::{parse_macro_input, parse_quote, Data, DataEnum, DataStruct, DeriveInput, Fields};
+use syn::{parse_quote, Data, DataEnum, DeriveInput, Fields};
 
 use crate::*;
 
-pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
+pub fn generate(input: &mut DeriveInput) -> TokenStream {
 
-    // Generate the code that implements the read()
     let generated_code = match input.data {
-        // Sruct
         Data::Struct(ref contents) => {
-            let attrs = FromDeriveInput::from_derive_input(&input).unwrap();
-            generate_struct_write(&input, contents, attrs)
+            let attrs: StructAttributes = FromDeriveInput::from_derive_input(&input).unwrap();
+            generate_fields_write(&contents.fields, Some("self"), attrs.endian.as_deref()).0
         }
-        // Enum
         Data::Enum(ref contents) => {
             let attrs = FromDeriveInput::from_derive_input(&input).unwrap();
             generate_enum_write(&input, contents, attrs)
@@ -25,11 +21,11 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         _ => unimplemented!("Cannot derive on this type"),
     };
 
-    let name = input.ident;
-    let generics = add_trait_bounds(input.generics, parse_quote! {simple_parse::SpRead});
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    add_trait_bounds(&mut input.generics, parse_quote! {simple_parse::SpRead});
+    let name = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    let expanded = quote! {
+    let res = quote! {
         impl #impl_generics ::simple_parse::SpWrite for #name #ty_generics #where_clause {
             fn to_writer<W: std::io::Write + ?Sized>(&self, dst: &mut W) -> std::result::Result<usize, ::simple_parse::SpError> {
                 self.inner_to_writer(true, true, dst)
@@ -48,114 +44,27 @@ pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         }
     };
 
-    //println!("{}", expanded.to_string());
-    proc_macro::TokenStream::from(expanded)
+    #[cfg(feature = "print-generated")]
+    println!("{}", res.to_string());
+
+    res
 }
 
 /// Generates the code that dumps each field of the struct into the Vec<u8>
-fn generate_struct_write(
-    _input: &DeriveInput,
-    data: &DataStruct,
-    attrs: StructAttributes,
-) -> TokenStream {
-    let default_is_le: bool = match attrs.endian {
-        None => cfg!(target_endian = "little"),
-        Some(ref e) => is_lower_endian(e),
-    };
-
-    generate_field_write(&data.fields, Some("self"), default_is_le)
-}
-
-/// Generates the code that matches the current enum variant and dumps bytes
-/// for each of its fields
-fn generate_enum_write(input: &DeriveInput, data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
-    let name = &input.ident;
-
-    let mut seen_ids: HashMap<usize, String> = HashMap::new();
-    // Go through every field to find the biggest variant ID
-    let mut next_variant_id:usize = 0;
-    for variant in data.variants.iter() {
-        let var_attrs: darling::Result<VariantAttributes> = FromVariant::from_variant(&variant);
-        let variant_name = &variant.ident;
-        let variant_id = match var_attrs {
-            Ok(v) if v.id.is_some() => {
-                let specified_id = v.id.unwrap();
-                next_variant_id = specified_id + 1;
-                specified_id
-            },
-            _ => {
-                let cur = next_variant_id;
-                next_variant_id += 1;
-                cur
-            },
-        };
-
-        if let Some(v) = seen_ids.insert(variant_id, variant_name.to_string()) {
-            panic!("{0}.{1} has the same ID as {0}.{2} : {3}", name.to_string(), variant_name.to_string(), v, variant_id);
-        }
-    }
-    let id_type: syn::Type = syn::parse_str(match attrs.id_type {
-        Some(ref s) => s.as_str(),
-        None => {
-            if next_variant_id != 0 {
-                next_variant_id -= 1;
-            }
-            smallest_type_for_num(next_variant_id)
-        },
-    }).unwrap();
-
-    let default_is_le: bool = match attrs.endian {
-        None => cfg!(target_endian = "little"),
-        Some(ref e) => is_lower_endian(e),
-    };
-
-    let mut variant_code_gen = TokenStream::new();
-    let mut auto_variant_id:usize = 0;
-    // Create a match case for every variant
-    for variant in data.variants.iter() {
-        let var_attrs: darling::Result<VariantAttributes> = FromVariant::from_variant(&variant);
-        let variant_name = &variant.ident;
-        let variant_id = match var_attrs {
-            Ok(v) if v.id.is_some() => {
-                let specified_id = v.id.unwrap();
-                auto_variant_id = specified_id + 1;
-                specified_id
-            },
-            _ => {
-                let cur = auto_variant_id;
-                auto_variant_id += 1;
-                cur
-            },
-        };
-        let variant_id = syn::LitInt::new(&variant_id.to_string(), proc_macro2::Span::call_site());
-        let field_list = generate_field_list(&variant.fields, None, None);
-        let field_write_code = generate_field_write(&variant.fields, None, default_is_le);
-
-        variant_code_gen.extend(quote! {
-            #name::#variant_name#field_list => {
-                let mut var_id: #id_type = #variant_id;
-                written_len += var_id.inner_to_writer(#default_is_le, true, dst)?;
-                #field_write_code
-            },
-        });
-    }
-
-    quote! {
-        match self {
-            #variant_code_gen
-        };
-    }
-}
-
-/// Generates code that calls inner_to_writer for every field and appends the resulting bytes to a vec
-/// called `res`.
-/// This function also modifies any `count` field to match their vec's len()
-fn generate_field_write(
+fn generate_fields_write(
     fields: &Fields,
-    obj_name: Option<&str>,
-    default_is_le: bool,
-) -> TokenStream {
-    let mut dump_fields_code = TokenStream::new();
+    prefix: Option<&str>,
+    endian: Option<&str>,
+) -> (TokenStream, TokenStream) {
+
+    let mut write_code = TokenStream::new();
+    let mut field_list = TokenStream::new();
+
+    let default_is_le: bool = match endian {
+        None => cfg!(target_endian = "little"),
+        Some(ref e) => is_lower_endian(e),
+    };
+
     let mut count_fields = HashMap::new();
 
     // Generate a map of fields that are counts to other fields
@@ -165,13 +74,13 @@ fn generate_field_write(
             continue;
         }
 
-        if let Some(field_name) = generate_count_field_name(field_attrs.count, fields, obj_name, false) {
+        if let Some(field_name) = generate_count_field_name(&field_attrs.count, fields, prefix, false) {
             if count_fields.is_empty() {
-                dump_fields_code.extend(quote! {use std::convert::TryInto;});
+                write_code.extend(quote! {use std::convert::TryInto;});
             }
             count_fields.insert(
                 field_name.to_string(), // Name of the count=X field
-                generate_field_name(field, idx, obj_name, false), // Current field that needs count
+                generate_field_name(field, idx, prefix, false), // Current field that needs count
             );
         } else {
             panic!("count annotation for {} does not point to a valid field...", generate_field_name(field, idx, None, false).to_string());
@@ -181,7 +90,13 @@ fn generate_field_write(
     // Generate write call for every field
     for (idx, field) in fields.iter().enumerate() {
         let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
-        let field_ident = generate_field_name(field, idx, obj_name, false);
+        let field_ident = generate_field_name(field, idx, prefix, false);
+
+        field_list.extend(
+            quote!{
+                #field_ident,
+            }
+        );
 
         let is_output_le = match field_attrs.endian {
             None => default_is_le,
@@ -200,7 +115,7 @@ fn generate_field_write(
                 quote!{#t}
             };
             
-            dump_fields_code.extend(quote! {
+            write_code.extend(quote! {
                 let _f: #ftype = match #ident.len().try_into() {
                     Ok(v) => v,
                     Err(e) => return Err(::simple_parse::SpError::CountFieldOverflow),
@@ -214,7 +129,7 @@ fn generate_field_write(
         let write_call = match field_attrs.writer {
             Some(s) => {
                 let s: TokenStream = s.parse().unwrap();
-                let ref_mut = if obj_name.is_some() {
+                let ref_mut = if prefix.is_some() {
                     quote! {
                         &mut
                     }
@@ -238,12 +153,74 @@ fn generate_field_write(
         };
 
         // Add the generated code for this field
-        dump_fields_code.extend(quote! {
+        write_code.extend(quote! {
             written_len += #write_call?;
         })
     }
 
+    (write_code, field_list)
+}
+
+/// Generates the code that matches the current enum variant and dumps bytes
+/// for each of its fields
+fn generate_enum_write(input: &DeriveInput, data: &DataEnum, attrs: EnumAttributes) -> TokenStream {
+    let name = &input.ident;
+
+    let id_type = get_enum_id_type(data, &attrs);
+
+    let default_is_le: bool = match attrs.endian {
+        None => cfg!(target_endian = "little"),
+        Some(ref e) => is_lower_endian(e),
+    };
+
+    let mut variant_code_gen = TokenStream::new();
+    let mut auto_variant_id:usize = 0;
+    // Create a match case for every variant
+    for variant in data.variants.iter() {
+        let var_attrs: VariantAttributes = FromVariant::from_variant(&variant).unwrap();
+        let variant_name = &variant.ident;
+        let variant_id = match var_attrs.id {
+            Some(id) => {
+                auto_variant_id = id + 1;
+                id
+            },
+            _ => {
+                let cur = auto_variant_id;
+                auto_variant_id += 1;
+                cur
+            },
+        };
+        let variant_id = syn::LitInt::new(&variant_id.to_string(), proc_macro2::Span::call_site());
+
+        let (write_code, field_list) = if !variant.fields.is_empty() {
+            let (write, list) = generate_fields_write(&variant.fields, None, var_attrs.endian.as_deref());
+            (write, 
+                if let syn::Fields::Unnamed(_r) = &variant.fields {
+                    quote!{
+                        (#list)
+                    }
+                } else {
+                    quote!{
+                        {#list}
+                    }
+                }
+            )
+        } else {
+            (TokenStream::new(), TokenStream::new())
+        };
+
+        variant_code_gen.extend(quote! {
+            #name::#variant_name#field_list => {
+                let mut var_id: #id_type = #variant_id;
+                written_len += var_id.inner_to_writer(#default_is_le, true, dst)?;
+                #write_code
+            },
+        });
+    }
+
     quote! {
-        #dump_fields_code
+        match self {
+            #variant_code_gen
+        };
     }
 }

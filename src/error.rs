@@ -12,6 +12,8 @@ pub enum SpError {
     CountFieldOverflow,
     /// The data contained enough bytes but the format was wrong
     InvalidBytes,
+    /// The bytes were mis-aligned
+    BadAlignment,
 }
 impl fmt::Display for SpError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -27,6 +29,7 @@ impl fmt::Display for SpError {
                 "The count field's type is too small for the number of items !"
             ),
             SpError::InvalidBytes => write!(f, "Failed to parse the bytes into the wanted type"),
+            SpError::BadAlignment => write!(f, "Input bytes are misaligned"),
         }
     }
 }

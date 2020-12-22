@@ -1,11 +1,15 @@
+use std::collections::{HashMap};
+
 use darling::{FromDeriveInput, FromField, FromVariant};
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{Field, Fields, GenericParam, Generics};
+use syn::{parse_macro_input, Type, Field, Fields, GenericParam, Generics, DataEnum, DeriveInput};
 
+mod opt_hints;
 mod read;
 mod write;
 mod attributes;
+
 pub (crate) use attributes::*;
 
 pub (crate) enum ReaderType {
@@ -14,44 +18,61 @@ pub (crate) enum ReaderType {
     RawMut
 }
 
+#[proc_macro_derive(SpOptHints, attributes(sp))]
+/// Automatically implements SpOptHints
+///
+/// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
+pub fn generate_opt_hints(input: TokenStream) -> TokenStream {
+    let mut input = parse_macro_input!(input as DeriveInput);
+    let res = opt_hints::generate(&mut input);
+    proc_macro::TokenStream::from(res)
+}
+
 #[proc_macro_derive(SpRead, attributes(sp))]
-/// Implements SpRead on the type
+/// Automatically implements SpRead and SpOptHints
 /// 
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_read(input: TokenStream) -> TokenStream {
-    read::generate(input, ReaderType::Reader)
+    let mut input = parse_macro_input!(input as DeriveInput);
+    let res = read::generate(&mut input, ReaderType::Reader);
+    proc_macro::TokenStream::from(res)
 }
 #[proc_macro_derive(SpReadRaw, attributes(sp))]
-/// Implements SpReadRaw on the type
+/// Automatically implements SpReadRaw
 /// 
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_readraw(input: TokenStream) -> TokenStream {
-    read::generate(input, ReaderType::Raw)
+    let mut input = parse_macro_input!(input as DeriveInput);
+    let res = read::generate(&mut input, ReaderType::Raw);
+    proc_macro::TokenStream::from(res)
 }
 #[proc_macro_derive(SpReadRawMut, attributes(sp))]
-/// Implements SpReadRawMut on the type
+/// Automatically implements SpReadRawMut
 /// 
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_readrawmut(input: TokenStream) -> TokenStream {
-    read::generate(input, ReaderType::RawMut)
+    let mut input = parse_macro_input!(input as DeriveInput);
+    let res = read::generate(&mut input, ReaderType::RawMut);
+    proc_macro::TokenStream::from(res)
 }
 
 #[proc_macro_derive(SpWrite, attributes(sp))]
-/// Implements SpWrite on the type
+/// Automatically implements SpWrite
 /// 
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_write(input: TokenStream) -> TokenStream {
-    write::generate(input)
+    let mut input = parse_macro_input!(input as DeriveInput);
+    let res = write::generate(&mut input);
+    proc_macro::TokenStream::from(res)
 }
 
 /// Adds a bound to a generic parameter
-pub(crate) fn add_trait_bounds(mut generics: Generics, new_bound: syn::TypeParamBound) -> Generics {
-    for param in &mut generics.params {
+pub(crate) fn add_trait_bounds(generics: &mut Generics, new_bound: syn::TypeParamBound) {
+    for param in generics.params.iter_mut() {
         if let GenericParam::Type(ref mut type_param) = *param {
             type_param.bounds.push(new_bound.clone());
         }
     }
-    generics
 }
 
 // Returns the name of a field.
@@ -102,7 +123,7 @@ pub(crate) fn generate_field_name(
 /// Converts `count` into a useable field name. Returns None if `count` is None or if the value of `count` cannot be found.
 /// eg. self.num_field | *self.num_field | field_01
 pub(crate) fn generate_count_field_name(
-    count: Option<String>,
+    count: &Option<String>,
     fields: &Fields,
     obj_name: Option<&str>,
     deref_references: bool
@@ -118,7 +139,7 @@ pub(crate) fn generate_count_field_name(
             Some(ref i) => i.to_string(),
             None => format!("field_{}", idx),
         };
-        if cur_field == count_field {
+        if count_field == &cur_field {
             count_field_name = Some(generate_field_name(field, idx, obj_name, deref_references));
         }
     }
@@ -137,55 +158,44 @@ pub(crate) fn is_lower_endian(val: &str) -> bool {
     }
 }
 
-/// Generates the proper code to initialize the object
-/// e.g :
-///     (field_0, field_1, field_2)
-/// OR
-///     {some_field, timestamp, secret_key}
-fn generate_field_list(
-    fields: &Fields,
-    field_idents: Option<&Vec<proc_macro2::TokenStream>>,
-    prefix: Option<&str>,
-) -> proc_macro2::TokenStream {
-    let mut tmp;
+/// Validates an enum variant's IDs and returns the smallest type that can fit the biggest variant id
+pub (crate) fn get_enum_id_type(data: &DataEnum, attrs: &EnumAttributes) -> syn::Type {
+    let mut seen_ids: HashMap<usize, String> = HashMap::new();
+    // Go through every field to find the biggest variant ID
+    let mut next_variant_id:usize = 0;
+    for variant in data.variants.iter() {
+        let var_attrs: darling::Result<VariantAttributes> = FromVariant::from_variant(&variant);
+        let variant_name = &variant.ident;
+        let variant_id = match var_attrs {
+            Ok(v) if v.id.is_some() => {
+                let specified_id = v.id.unwrap();
+                next_variant_id = specified_id + 1;
+                specified_id
+            },
+            _ => {
+                let cur = next_variant_id;
+                next_variant_id += 1;
+                cur
+            },
+        };
 
-    if let Fields::Unit = fields {
-        return quote! {};
-    }
-
-    let field_idents = match field_idents {
-        Some(f) => f,
-        None => {
-            tmp = Vec::with_capacity(fields.len());
-            for (idx, field) in fields.iter().enumerate() {
-                tmp.push(generate_field_name(field, idx, None, false));
-            }
-            &tmp
+        if let Some(v) = seen_ids.insert(variant_id, variant_name.to_string()) {
+            panic!("Field {} has the same ID as {} : {}", variant_name.to_string(), v, variant_id);
         }
-    };
-
-    let prefix = match prefix {
-        Some(s) => s.parse().unwrap(),
-        None => proc_macro2::TokenStream::new(),
-    };
-    let mut field_list = proc_macro2::TokenStream::new();
-    for f in field_idents {
-        field_list.extend(quote! {
-            #prefix #f,
-        });
     }
 
-    match fields {
-        Fields::Named(_) => quote! {
-            {#field_list}
-        },
-        Fields::Unnamed(_) => quote! {
-            (#field_list)
-        },
-        _ => unreachable!(),
+    if next_variant_id != 0 {
+        next_variant_id -= 1;
     }
+    let id_type: syn::Type = syn::parse_str(match attrs.id_type {
+        Some(ref s) => s.as_str(),
+        None => {
+            smallest_type_for_num(next_variant_id)
+        },
+    }).unwrap();
+
+    id_type
 }
-
 
 // Returns the small unsigned integer type for a given usize value
 pub (crate) fn smallest_type_for_num(num: usize) -> &'static str {
@@ -198,4 +208,47 @@ pub (crate) fn smallest_type_for_num(num: usize) -> &'static str {
     } else {
         "u64"
     } 
+}
+
+pub (crate) fn get_parse_fn_name(reader_type: &ReaderType, unchecked: bool) -> proc_macro2::TokenStream {
+    match (unchecked, reader_type) {
+        (true, ReaderType::Reader) => {
+            quote! {inner_from_reader_unchecked}
+        }
+        (true, ReaderType::Raw) => {
+            quote! {inner_from_slice_unchecked}
+        }
+        (true, ReaderType::RawMut) => {
+            quote! {inner_from_mut_slice_unchecked}
+        }
+        (false, ReaderType::Reader) => {
+            quote! {inner_from_reader}
+        }
+        (false, ReaderType::Raw) => {
+            quote! {inner_from_slice}
+        }
+        (false, ReaderType::RawMut) => {
+            quote! {inner_from_mut_slice}
+        }
+    }
+}
+
+pub (crate) fn is_var_size(typ: &Type, attrs: Option<&FieldAttributes>) -> bool {
+    
+    if let Some(attrs) = attrs {
+        // Types that take a count are always variably sized
+        if attrs.count.is_some() || attrs.var_size.is_some() {
+            return true;
+        }
+    }
+
+    let field_ty = quote!{#typ}.to_string();
+
+    //println!("{}", field_ty);
+
+    if field_ty.starts_with("&[") || field_ty == "&str" || field_ty == "String" || field_ty.starts_with("Vec <") || field_ty.starts_with("HashSet <") || field_ty.starts_with("HashMap <") {
+        return true;
+    }
+
+    false
 }

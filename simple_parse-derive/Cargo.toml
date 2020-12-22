@@ -1,6 +1,6 @@
 [package]
 name = "simple_parse_derive"
-version = "0.4.1"
+version = "0.5.0"
 authors = ["ElasT0ny <elast0ny00@gmail.com>"]
 edition = "2018"
 description = "A derive macro that implements the simple_parse traits"
@@ -14,8 +14,15 @@ repository  = "https://github.com/elast0ny/simple_parse/tree/master/simple_parse
 [lib]
 proc-macro = true
 
+[features]
+default = []
+print-generated = []
+verbose = ["log"]
+
 [dependencies]
 syn = "1.*"
 quote = "1.*"
-proc-macro2 = "1.*"
+proc-macro2 = {version = "1.*", features = ["span-locations"]}
 darling = "0.*"
+log = {version = "0", optional = true}
+static_assertions = "1"
