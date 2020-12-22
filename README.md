@@ -4,7 +4,7 @@
 [![mio](https://docs.rs/simple_parse/badge.svg)](https://docs.rs/simple_parse/)
 ![Lines of Code](https://tokei.rs/b1/github/elast0ny/simple_parse)
 
-simple_parse is a declarative binary stream parser that aims to generate the most efficient parsing code possible for your custom types while remaining safe.
+`simple_parse` is a declarative binary stream parser that aims to generate the most efficient parsing code possible for your custom types while remaining safe.
 
 
 | Features | Description |
@@ -12,11 +12,11 @@ simple_parse is a declarative binary stream parser that aims to generate the mos
 | Fast| The generated parsing code is often faster than "idiomatic" C implementations|
 | [No copy](examples/no_copy.rs) | Able to return references into byte slices |
 | Built-in endianness support | Annotating structs/fields with `endian` gives control over how numbers will be parsed |
-| Convert back to bytes | In addition to parsing arbitrary bytes, simple_parse also allows dumping structs back into binary form |
+| Convert back to bytes | In addition to parsing arbitrary bytes, `simple_parse` also allows dumping structs back into binary form |
 
 ***
 
-If simple_parse is unable to describe your complex/non-standard binary formats, take a look at [deku](https://github.com/sharksforarms/deku).
+If `simple_parse` is unable to describe your complex/non-standard binary formats, take a look at [deku](https://github.com/sharksforarms/deku).
 
 ## Usage
 
@@ -52,3 +52,27 @@ my_struct.to_writer(&mut cli_sock)?;
 ```
 
 For complete examples see : [examples](examples/)
+
+
+## Project Goals
+In vague order of priority, `simple_parse` aims to provide :
+
+ 1. Safety
+ 2. Performance
+ 3. Ease of use
+ 4. Adaptability
+
+In other words, `simple_parse` will try to generate the most performant while never compromising on safety.
+
+Secondly, we also prioritize ease of use by providing default implementations that work well in most cases while also allowing some customisation to accomodate for binary formats we cannot control.
+
+## License
+
+ * [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0)
+ * [MIT license](http://opensource.org/licenses/MIT)
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
