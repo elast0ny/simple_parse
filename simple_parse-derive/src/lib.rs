@@ -1,21 +1,21 @@
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
 use darling::{FromDeriveInput, FromField, FromVariant};
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Type, Field, Fields, GenericParam, Generics, DataEnum, DeriveInput};
+use syn::{parse_macro_input, DataEnum, DeriveInput, Field, Fields, GenericParam, Generics, Type};
 
+mod attributes;
 mod opt_hints;
 mod read;
 mod write;
-mod attributes;
 
-pub (crate) use attributes::*;
+pub(crate) use attributes::*;
 
-pub (crate) enum ReaderType {
+pub(crate) enum ReaderType {
     Reader,
     Raw,
-    RawMut
+    RawMut,
 }
 
 #[proc_macro_derive(SpOptHints, attributes(sp))]
@@ -30,7 +30,7 @@ pub fn generate_opt_hints(input: TokenStream) -> TokenStream {
 
 #[proc_macro_derive(SpRead, attributes(sp))]
 /// Automatically implements SpRead and SpOptHints
-/// 
+///
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_read(input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as DeriveInput);
@@ -39,7 +39,7 @@ pub fn generate_read(input: TokenStream) -> TokenStream {
 }
 #[proc_macro_derive(SpReadRaw, attributes(sp))]
 /// Automatically implements SpReadRaw
-/// 
+///
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_readraw(input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as DeriveInput);
@@ -48,7 +48,7 @@ pub fn generate_readraw(input: TokenStream) -> TokenStream {
 }
 #[proc_macro_derive(SpReadRawMut, attributes(sp))]
 /// Automatically implements SpReadRawMut
-/// 
+///
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_readrawmut(input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as DeriveInput);
@@ -58,7 +58,7 @@ pub fn generate_readrawmut(input: TokenStream) -> TokenStream {
 
 #[proc_macro_derive(SpWrite, attributes(sp))]
 /// Automatically implements SpWrite
-/// 
+///
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_write(input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as DeriveInput);
@@ -115,9 +115,8 @@ pub(crate) fn generate_field_name(
             fname = format!("*{}", fname);
         }
     }
-    
-    fname.parse()
-    .unwrap()
+
+    fname.parse().unwrap()
 }
 
 /// Converts `count` into a useable field name. Returns None if `count` is None or if the value of `count` cannot be found.
@@ -126,7 +125,7 @@ pub(crate) fn generate_count_field_name(
     count: &Option<String>,
     fields: &Fields,
     obj_name: Option<&str>,
-    deref_references: bool
+    deref_references: bool,
 ) -> Option<proc_macro2::TokenStream> {
     let count_field = match count {
         None => return None,
@@ -159,10 +158,10 @@ pub(crate) fn is_lower_endian(val: &str) -> bool {
 }
 
 /// Validates an enum variant's IDs and returns the smallest type that can fit the biggest variant id
-pub (crate) fn get_enum_id_type(data: &DataEnum, attrs: &EnumAttributes) -> syn::Type {
+pub(crate) fn get_enum_id_type(data: &DataEnum, attrs: &EnumAttributes) -> syn::Type {
     let mut seen_ids: HashMap<usize, String> = HashMap::new();
     // Go through every field to find the biggest variant ID
-    let mut next_variant_id:usize = 0;
+    let mut next_variant_id: usize = 0;
     for variant in data.variants.iter() {
         let var_attrs: darling::Result<VariantAttributes> = FromVariant::from_variant(&variant);
         let variant_name = &variant.ident;
@@ -171,16 +170,21 @@ pub (crate) fn get_enum_id_type(data: &DataEnum, attrs: &EnumAttributes) -> syn:
                 let specified_id = v.id.unwrap();
                 next_variant_id = specified_id + 1;
                 specified_id
-            },
+            }
             _ => {
                 let cur = next_variant_id;
                 next_variant_id += 1;
                 cur
-            },
+            }
         };
 
         if let Some(v) = seen_ids.insert(variant_id, variant_name.to_string()) {
-            panic!("Field {} has the same ID as {} : {}", variant_name.to_string(), v, variant_id);
+            panic!(
+                "Field {} has the same ID as {} : {}",
+                variant_name.to_string(),
+                v,
+                variant_id
+            );
         }
     }
 
@@ -189,16 +193,15 @@ pub (crate) fn get_enum_id_type(data: &DataEnum, attrs: &EnumAttributes) -> syn:
     }
     let id_type: syn::Type = syn::parse_str(match attrs.id_type {
         Some(ref s) => s.as_str(),
-        None => {
-            smallest_type_for_num(next_variant_id)
-        },
-    }).unwrap();
+        None => smallest_type_for_num(next_variant_id),
+    })
+    .unwrap();
 
     id_type
 }
 
 // Returns the small unsigned integer type for a given usize value
-pub (crate) fn smallest_type_for_num(num: usize) -> &'static str {
+pub(crate) fn smallest_type_for_num(num: usize) -> &'static str {
     if num <= u8::MAX as _ {
         "u8"
     } else if num <= u16::MAX as _ {
@@ -207,10 +210,13 @@ pub (crate) fn smallest_type_for_num(num: usize) -> &'static str {
         "u32"
     } else {
         "u64"
-    } 
+    }
 }
 
-pub (crate) fn get_parse_fn_name(reader_type: &ReaderType, unchecked: bool) -> proc_macro2::TokenStream {
+pub(crate) fn get_parse_fn_name(
+    reader_type: &ReaderType,
+    unchecked: bool,
+) -> proc_macro2::TokenStream {
     match (unchecked, reader_type) {
         (true, ReaderType::Reader) => {
             quote! {inner_from_reader_unchecked}
@@ -233,8 +239,7 @@ pub (crate) fn get_parse_fn_name(reader_type: &ReaderType, unchecked: bool) -> p
     }
 }
 
-pub (crate) fn is_var_size(typ: &Type, attrs: Option<&FieldAttributes>) -> bool {
-    
+pub(crate) fn is_var_size(typ: &Type, attrs: Option<&FieldAttributes>) -> bool {
     if let Some(attrs) = attrs {
         // Types that take a count are always variably sized
         if attrs.count.is_some() || attrs.var_size.is_some() {
@@ -242,13 +247,62 @@ pub (crate) fn is_var_size(typ: &Type, attrs: Option<&FieldAttributes>) -> bool 
         }
     }
 
-    let field_ty = quote!{#typ}.to_string();
+    let field_ty = quote! {#typ}.to_string();
 
-    //println!("{}", field_ty);
-
-    if field_ty.starts_with("&[") || field_ty == "&str" || field_ty == "String" || field_ty.starts_with("Vec <") || field_ty.starts_with("HashSet <") || field_ty.starts_with("HashMap <") {
+    // All the types we know are dynamic
+    if field_ty.starts_with("&[")
+        || field_ty == "&str"
+        || field_ty == "String"
+        || field_ty == "&CStr"
+        || field_ty == "CString"
+        || field_ty.starts_with("Option <")
+        || field_ty.starts_with("Vec <")
+        || field_ty.starts_with("VecDeque <")
+        || field_ty.starts_with("LinkedList <")
+        || field_ty.starts_with("HashSet <")
+        || field_ty.starts_with("BTreeSet <")
+        || field_ty.starts_with("HashMap <")
+        || field_ty.starts_with("BTreeMap <")
+        || field_ty.starts_with("BinaryHeap <")
+    {
         return true;
     }
 
     false
+}
+
+/// Returns the static size of a type
+/// 
+/// This is needed to get around an issue with const generics.
+/// When Self is a generic type, it's Self::STATIC_SIZE cannot be evaluated as const so
+/// we must use another non-generic type's STATIC_SIZE.
+pub(crate) fn get_static_size(typ: &Type) -> proc_macro2::TokenStream {
+
+    let field_ty = quote! {#typ}.to_string();
+    
+    // Return <bool>::STATIC_SIZE for Option<T>
+    if field_ty == "Option <" {
+        quote!{
+            <bool as ::simple_parse::SpOptHints>::STATIC_SIZE
+        }
+    // Return <DefaultCountType>::STATIC_SIZE for generic containers
+    } else if field_ty.starts_with("Vec <")
+        || field_ty.starts_with("VecDeque <")
+        || field_ty.starts_with("LinkedList <")
+        || field_ty.starts_with("HashSet <")
+        || field_ty.starts_with("BTreeSet <")
+        || field_ty.starts_with("HashMap <")
+        || field_ty.starts_with("BTreeMap <")
+        || field_ty.starts_with("BinaryHeap <")
+    {
+        quote!{
+            <::simple_parse::DefaultCountType as ::simple_parse::SpOptHints>::STATIC_SIZE
+        }
+    } else if field_ty.contains('<') {
+        panic!("Generic type '{}' cannot be used as a field because Rust currently does not handle const generics properly (Required for SpOptHints::STATIC_SIZE)");
+    } else {
+        quote!{
+            <#typ as ::simple_parse::SpOptHints>::STATIC_SIZE
+        }
+    }
 }

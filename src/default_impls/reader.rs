@@ -1,26 +1,26 @@
+use std::cmp::{Eq, Ord};
+use std::collections::*;
+use std::ffi::CString;
+use std::hash::Hash;
 use std::num::*;
 use std::sync::atomic::*;
-use std::ffi::CString;
-use std::collections::*;
-use std::cmp::{Eq, Ord};
-use std::hash::Hash;
 
 use crate::*;
 
 /* Primitive types */
 
-impl_read!(u8, prim_from_ptr);
-impl_read!(u16, prim_from_ptr);
-impl_read!(u32, prim_from_ptr);
-impl_read!(u64, prim_from_ptr);
-impl_read!(u128, prim_from_ptr);
-impl_read!(usize, prim_from_ptr);
-impl_read!(i8, prim_from_ptr);
-impl_read!(i16, prim_from_ptr);
-impl_read!(i32, prim_from_ptr);
-impl_read!(i64, prim_from_ptr);
-impl_read!(i128, prim_from_ptr);
-impl_read!(isize, prim_from_ptr);
+impl_read!(u8 as u8, prim_from_ptr);
+impl_read!(u16 as u16, prim_from_ptr);
+impl_read!(u32 as u32, prim_from_ptr);
+impl_read!(u64 as u64, prim_from_ptr);
+impl_read!(u128 as u128, prim_from_ptr);
+impl_read!(usize as usize, prim_from_ptr);
+impl_read!(i8 as i8, prim_from_ptr);
+impl_read!(i16 as i16, prim_from_ptr);
+impl_read!(i32 as i32, prim_from_ptr);
+impl_read!(i64 as i64, prim_from_ptr);
+impl_read!(i128 as i128, prim_from_ptr);
+impl_read!(isize as isize, prim_from_ptr);
 
 impl_read!(bool as u8, bool_from_ptr);
 impl_read!(f32 as u32, float_from_ptr);
@@ -57,7 +57,7 @@ macro_rules! string_from_reader {
         let bytes = <Vec<u8>>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
         match String::from_utf8(bytes) {
             Ok(s) => Ok(s),
-            Err(_e) => Err(SpError::InvalidBytes)
+            Err(_e) => Err(SpError::InvalidBytes),
         }
     }};
 }
@@ -83,7 +83,7 @@ macro_rules! cstring_from_reader {
             }
             bytes.push(dst[0]);
         }
-        
+
         Ok(CString::from_vec_unchecked(bytes))
     }};
 }
@@ -97,14 +97,18 @@ macro_rules! option_from_reader {
         // Dont use checked_bytes if count is provided
         let is_some: bool = match $count {
             Some(c) => c != 0,
-            None => {
-                <bool>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?
-            }
+            None => <bool>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?,
         };
-        
-        Ok(if is_some {
+
+        Ok(if !is_some {
+            #[cfg(feature = "verbose")]
+            crate::debug!("None");
+
             None
         } else {
+            #[cfg(feature = "verbose")]
+            crate::debug!("Some({})", stringify!($generic));
+
             Some(<$generic>::$reader($src, $is_input_le, $count)?)
         })
     }};
@@ -122,6 +126,10 @@ macro_rules! generic_from_reader {
                 <DefaultCountType>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)? as _
             }
         };
+
+        if count == 0 {
+            return Ok(Self::new());
+        }
 
         let mut res;
 
@@ -177,7 +185,12 @@ macro_rules! vecdeque_from_reader {
         generic_from_reader!(new_with_capacity, push_back, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
     };
 }
-impl_read!(VecDeque<T>, <DefaultCountType>::STATIC_SIZE, vecdeque_from_reader, T);
+impl_read!(
+    VecDeque<T>,
+    <DefaultCountType>::STATIC_SIZE,
+    vecdeque_from_reader,
+    T
+);
 
 /// Returns a LinkedList<T> from a Reader
 macro_rules! linkedlist_from_reader {
@@ -185,7 +198,12 @@ macro_rules! linkedlist_from_reader {
         generic_from_reader!(new_empty, push_back, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
     };
 }
-impl_read!(LinkedList<T>, <DefaultCountType>::STATIC_SIZE, linkedlist_from_reader, T);
+impl_read!(
+    LinkedList<T>,
+    <DefaultCountType>::STATIC_SIZE,
+    linkedlist_from_reader,
+    T
+);
 
 /// Returns a HashSet<K> from a Reader
 macro_rules! hashset_from_reader {
@@ -193,7 +211,12 @@ macro_rules! hashset_from_reader {
         generic_from_reader!(new_with_capacity, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
     };
 }
-impl_read!(HashSet<K>, <DefaultCountType>::STATIC_SIZE, hashset_from_reader, K: Eq + Hash);
+impl_read!(
+    HashSet<K>,
+    <DefaultCountType>::STATIC_SIZE,
+    hashset_from_reader,
+    K: Eq + Hash
+);
 
 /// Returns a BTreeSet<K> from a Reader
 macro_rules! btreeset_from_reader {
@@ -201,7 +224,12 @@ macro_rules! btreeset_from_reader {
         generic_from_reader!(new_empty, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
     };
 }
-impl_read!(BTreeSet<K>, <DefaultCountType>::STATIC_SIZE, btreeset_from_reader, K: Ord);
+impl_read!(
+    BTreeSet<K>,
+    <DefaultCountType>::STATIC_SIZE,
+    btreeset_from_reader,
+    K: Ord
+);
 
 /// Returns a HashMap<K, V> from a Reader
 macro_rules! hashmap_from_reader {
@@ -218,4 +246,9 @@ macro_rules! btreemap_from_reader {
     };
 }
 impl_read!(BTreeMap<K,V>, <DefaultCountType>::STATIC_SIZE, btreemap_from_reader, K: Ord, V);
-impl_read!(BinaryHeap<T>, <DefaultCountType>::STATIC_SIZE, vec_from_reader, T: Ord);
+impl_read!(
+    BinaryHeap<T>,
+    <DefaultCountType>::STATIC_SIZE,
+    vec_from_reader,
+    T: Ord
+);

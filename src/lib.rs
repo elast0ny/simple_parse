@@ -1,7 +1,7 @@
 use std::io::{Cursor, Read, Write};
 
 #[cfg(feature = "verbose")]
-pub(crate) use log::*;
+pub use log::debug;
 
 pub use static_assertions as sa;
 
@@ -18,7 +18,7 @@ pub use simple_parse_derive::*;
 pub type DefaultCountType = u32;
 
 /// This is a safeguard against reading malicious/malformed dynamically sized types.
-/// For example, when reading a String that says it contains INT_MAX characters, chunks of 
+/// For example, when reading a String that says it contains INT_MAX characters, chunks of
 /// MAX_ALLOC_SIZE will be read at a time instead of allocating INT_MAX bytes in one go.
 pub const MAX_ALLOC_SIZE: usize = 1024;
 

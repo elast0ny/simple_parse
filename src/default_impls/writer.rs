@@ -1,9 +1,9 @@
+use std::cmp::{Eq, Ord};
+use std::collections::*;
+use std::ffi::{CStr, CString};
+use std::hash::Hash;
 use std::num::*;
 use std::sync::atomic::*;
-use std::ffi::{CStr, CString};
-use std::collections::*;
-use std::cmp::{Eq, Ord};
-use std::hash::Hash;
 
 use crate::*;
 
@@ -83,7 +83,7 @@ macro_rules! option_to_writer {
                     total_sz += is_some.inner_to_writer($is_output_le, $prepend_count, $dst)?;
                 }
                 total_sz += v.inner_to_writer($is_output_le, $prepend_count, $dst)?;
-            },
+            }
             None => {
                 if $prepend_count {
                     is_some = 0;

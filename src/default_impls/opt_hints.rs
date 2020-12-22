@@ -1,11 +1,10 @@
-
-use std::mem::size_of;
 use std::cmp::Eq;
+use std::collections::*;
+use std::ffi::{CStr, CString};
 use std::hash::Hash;
+use std::mem::size_of;
 use std::num::*;
 use std::sync::atomic::*;
-use std::ffi::{CStr, CString};
-use std::collections::*;
 
 use crate::*;
 
@@ -31,7 +30,7 @@ macro_rules! impl_static {
         unsafe impl SpOptHints for &mut [$typ] {
             const STATIC_SIZE: usize = DefaultCountType::STATIC_SIZE;
         }
-    }
+    };
 }
 
 impl_static!(u8);
@@ -88,7 +87,7 @@ macro_rules! impl_dynamic {
     ($typ:ty$(, $generics:tt $(: $bound:ident $(+ $other:ident)*)?)*) => {
         unsafe impl<$($generics :SpOptHints $(+ $bound$(+ $other)*)*),*> SpOptHints for $typ {
             const STATIC_SIZE: usize = DefaultCountType::STATIC_SIZE;
-            const COUNT_SIZE: usize = DefaultCountType::STATIC_SIZE; 
+            const COUNT_SIZE: usize = DefaultCountType::STATIC_SIZE;
         }
     }
 }
@@ -104,7 +103,7 @@ impl_dynamic!(&str);
 impl_dynamic!(String);
 unsafe impl<T> SpOptHints for Option<T> {
     const STATIC_SIZE: usize = <bool>::STATIC_SIZE;
-    const COUNT_SIZE: usize = <bool>::STATIC_SIZE; 
+    const COUNT_SIZE: usize = <bool>::STATIC_SIZE;
 }
 
 impl_dynamic!(Vec<T>, T);

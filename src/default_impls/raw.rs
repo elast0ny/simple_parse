@@ -1,9 +1,9 @@
+use std::cmp::{Eq, Ord};
+use std::collections::*;
+use std::ffi::{CStr, CString};
+use std::hash::Hash;
 use std::num::*;
 use std::sync::atomic::*;
-use std::ffi::{CStr, CString};
-use std::collections::*;
-use std::cmp::{Eq, Ord};
-use std::hash::Hash;
 
 use crate::*;
 
@@ -11,25 +11,31 @@ use crate::*;
 
 // Implements all SpReadRaw variations on a primitive type without references
 macro_rules! impl_primitive_noref {
-    ($typ:ty $(as $as_typ:ty)?, $as_copy:ident) => {
-        impl_readraw!($typ $(as $as_typ)?, $as_copy);
-        impl_readrawmut!($typ $(as $as_typ)?, $as_copy);
+    ($typ:ty, $as_copy:ident) => {
+        impl_primitive_noref!($typ as $typ, $as_copy);
+    };
+    ($typ:ty as $as_typ:ty, $as_copy:ident) => {
+        impl_readraw!($typ as $as_typ, $as_copy);
+        impl_readrawmut!($typ as $as_typ, $as_copy);
     };
 }
 
 // Implements all SpReadRaw variations on a primitive type
 macro_rules! impl_primitive {
-    ($typ:ty $(as $as_typ:ty)?, $as_copy:ident) => {
+    ($typ:ty, $as_copy:ident) => {
+        impl_primitive!($typ as $typ, $as_copy);
+    };
+    ($typ:ty as $as_typ:ty, $as_copy:ident) => {
         // Copy
-        impl_primitive_noref!($typ $(as $as_typ)?, $as_copy);
+        impl_primitive_noref!($typ as $as_typ, $as_copy);
         // References
-        impl_readraw!(&$typ as $typ, mutref_from_ptr);
-        impl_readrawmut!(&$typ as $typ, mutref_from_ptr);
-        impl_readrawmut!(&mut $typ as $typ, mutref_from_ptr);
+        impl_readraw!(&$typ as $as_typ, mutref_from_ptr);
+        impl_readrawmut!(&$typ as $as_typ, mutref_from_ptr);
+        impl_readrawmut!(&mut $typ as $as_typ, mutref_from_ptr);
         // Slices
-        impl_readraw!(&[$typ] as $typ, mutslice_from_cursor);
-        impl_readrawmut!(&[$typ] as $typ, mutslice_from_cursor);
-        impl_readrawmut!(&mut [$typ] as $typ, mutslice_from_cursor);
+        impl_readraw!(&[$typ] as $as_typ, mutslice_from_cursor);
+        impl_readrawmut!(&[$typ] as $as_typ, mutslice_from_cursor);
+        impl_readrawmut!(&mut [$typ] as $as_typ, mutslice_from_cursor);
     };
 }
 
@@ -40,7 +46,8 @@ macro_rules! mutslice_from_cursor {
         let count: usize = match $count {
             Some(c) => c,
             None => {
-                <DefaultCountType>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)? as _
+                <DefaultCountType>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?
+                    as _
             }
         };
 
@@ -48,17 +55,17 @@ macro_rules! mutslice_from_cursor {
         let slice_ptr = validate_cursor(count * <$as_typ>::STATIC_SIZE, $src)?;
 
         // Make sure the items in the slice are properly aligned
-        if std::mem::align_of::<$as_typ>() > 1 && slice_ptr.align_offset(std::mem::align_of::<$as_typ>()) != 0 {
+        if std::mem::align_of::<$as_typ>() > 1
+            && slice_ptr.align_offset(std::mem::align_of::<$as_typ>()) != 0
+        {
             return Err(SpError::BadAlignment);
         }
 
         // Return slice from pointer
-        Ok(
-            std::slice::from_raw_parts_mut(
-                slice_ptr as *const $as_typ as _,
-                count,
-            )
-        )
+        Ok(std::slice::from_raw_parts_mut(
+            slice_ptr as *const $as_typ as _,
+            count,
+        ))
     }};
 }
 
@@ -110,7 +117,7 @@ macro_rules! str_from_cursor {
     ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
         // Read as u8 slice
         let byte_slice = <&[u8]>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
-        
+
         // Make sure bytes are valid utf8
         match std::str::from_utf8(byte_slice) {
             Ok(v) => Ok(v),
@@ -150,9 +157,8 @@ macro_rules! cstr_from_cursor {
         while num_bytes < bytes_left {
             #[cfg(feature = "verbose")]
             crate::debug!(
-                "Check src.len({}) < size_of({}:1)",
-                bytes_left,
-                stringify!($typ)
+                "Check src.len({}) < 1",
+                bytes_left
             );
             num_bytes += 1;
             if *$checked_bytes.add(num_bytes as usize) == 0 {
@@ -190,12 +196,10 @@ macro_rules! option_from_cursor {
         // Dont use checked_bytes if count is provided
         let is_some: bool = match $count {
             Some(c) => c != 0,
-            None => {
-                <bool>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?
-            }
+            None => <bool>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?,
         };
-        
-        Ok(if is_some {
+
+        Ok(if !is_some {
             None
         } else {
             Some(<$generic>::$reader($src, $is_input_le, $count)?)

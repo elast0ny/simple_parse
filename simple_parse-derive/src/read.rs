@@ -5,43 +5,17 @@ use quote::quote;
 use syn::{parse_quote, Data, DataEnum, DeriveInput, Fields};
 
 fn generate_validate_size_code(static_size: &TokenStream, reader_type: &ReaderType) -> TokenStream {
-    let mut log_call = TokenStream::new();
-
     match reader_type {
         ReaderType::Reader => {
-            if cfg!(feature = "verbose") {
-                log_call = quote! {
-                    ::log::debug!("read({})", #static_size);
-                };
-            }
             quote! {
-                let mut tmp = [0u8; #static_size];
-                if #static_size > 0 {
-                    #log_call
-                    // Copy from reader into our stack variable
-                    if src.read_exact(&mut tmp).is_err() {
-                        return Err(::simple_parse::SpError::NotEnoughSpace);
-                    }
-                    // Return pointer to stack var
-                    checked_bytes = tmp.as_mut_ptr();
-                }
+                let mut tmp = [0u8; #static_size];            
+                ::simple_parse::validate_reader_exact(&mut tmp, src)?;
+                checked_bytes = tmp.as_mut_ptr();
             }
         },
         _ => {
-            if cfg!(feature = "verbose") {
-                log_call = quote! {
-                    ::log::debug!("Check src.len({}) < {}", (bytes.len() as u64) - idx, (#static_size));
-                };
-            }
             quote! {
-                let idx = src.position();
-                let bytes = src.get_ref();
-                {#log_call}
-                if (bytes.len() as u64) - idx < (#static_size) as u64 {
-                    return Err(::simple_parse::SpError::NotEnoughSpace);
-                }
-                checked_bytes = unsafe{bytes.as_ptr().add(idx as usize) as _};
-                src.set_position(idx + ((#static_size) as u64));
+                checked_bytes = validate_cursor(#static_size, src)?;
             }
         }
     }
@@ -71,7 +45,7 @@ pub(crate) fn generate(
             if cfg!(feature = "verbose") {
                 let name = &input.ident;
                 log_call = quote! {
-                    ::log::debug!("Parsing `struct {}`", stringify!(#name));
+                    ::simple_parse::debug!("Read struct {}", stringify!(#name));
                 };
             }
         }
@@ -85,7 +59,7 @@ pub(crate) fn generate(
             if cfg!(feature = "verbose") {
                 let name = &input.ident;
                 log_call = quote! {
-                    ::log::debug!("Parsing `enum {}`", stringify!(#name));
+                    ::simple_parse::debug!("Read enum {}", stringify!(#name));
                 };
             }
         }
@@ -97,6 +71,10 @@ pub(crate) fn generate(
     let name = &input.ident;
     let (_impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
+    // TODO When deriving a generic type, we run into const generic issues when using Self::STATIC_SIZE.
+    //      We could check whether the type has generics and instead of using STATIC_SIZE
+    //      directly, we can call opt_hint.rs' generate functions to use the same expresion
+    //      as it generated for the Self::STATIC_SIZE...
     let static_validation_code =
         generate_validate_size_code(&quote! {<#name as ::simple_parse::SpOptHints>::STATIC_SIZE}, &reader_type);
 
@@ -113,7 +91,7 @@ pub(crate) fn generate(
                 where
                     Self: Sized
                 {
-                    {#log_call}
+                    #log_call
                     let mut checked_bytes: *mut u8 = std::ptr::null_mut();
                     #static_validation_code
                     unsafe {
@@ -151,7 +129,7 @@ pub(crate) fn generate(
                     where
                         Self: Sized,
                     {
-                        {#log_call}
+                        #log_call
                         let mut checked_bytes: *mut u8 = std::ptr::null_mut();
                         #static_validation_code
                         unsafe {
@@ -191,7 +169,7 @@ pub(crate) fn generate(
                     where
                         Self: Sized,
                     {
-                        {#log_call}
+                        #log_call
                         let mut checked_bytes: *mut u8 = std::ptr::null_mut();
                         #static_validation_code
                         unsafe {
@@ -215,16 +193,21 @@ pub(crate) fn generate(
         }
     };
 
-    #[cfg(feature = "print-generated")]
-    println!("{}", res.to_string());
-
     // Automatically impl `SpOptHints` when deriving `SpRead`
     if let ReaderType::Reader = reader_type {
         let generate_opt_hints = crate::opt_hints::generate(input);
+        
+        #[cfg(feature = "print-generated")]
+        println!("{}", res.to_string());
+
         res.extend(quote! {
             #generate_opt_hints
         })
+    } else {
+        #[cfg(feature = "print-generated")]
+        println!("{}", res.to_string());
     }
+
     res
 }
 
@@ -266,17 +249,23 @@ fn generate_fields_read(
             Some(ref e) => is_lower_endian(e),
         };
 
+        let mut cur_field_size = quote!{
+            <#field_type as ::simple_parse::SpOptHints>::STATIC_SIZE
+        };
+        if field_attrs.count.is_some() {
+            cur_field_size.extend(quote!{
+                - <#field_type as ::simple_parse::SpOptHints>::COUNT_SIZE
+            })
+        }
+
+        // Start aggregating sizes for static fields after hitting the first dyn field
         if hit_first_dyn {
             num_summed_sizes += 1;
-            if num_summed_sizes == 1 {
-                static_size_code.extend(quote! {
-                    <#field_type as ::simple_parse::SpOptHints>::STATIC_SIZE
-                });
-            } else {
-                static_size_code.extend(quote! {
-                    + <#field_type as ::simple_parse::SpOptHints>::STATIC_SIZE
-                });
+            if num_summed_sizes > 1 {
+                static_size_code.extend(quote! { + });
             }
+            // Add this field to aggregated static field sizes
+            static_size_code.extend(quote!{#cur_field_size});
         }
 
         // Get the count field
@@ -287,10 +276,6 @@ fn generate_fields_read(
                 }
             }
             Some(c) => {
-                // Remove the u64 count because #[sp(count)] was provided
-                static_size_code.extend(quote!{
-                    - <::simple_parse::DefaultCountType as ::simple_parse::SpOptHints>::STATIC_SIZE
-                });
                 quote! {Some(#c as _)}
             }
         };
@@ -342,9 +327,7 @@ fn generate_fields_read(
         } else {
             // Move the checked_bytes pointer forward for the next field
             queued_read_code.extend(quote! {
-                unsafe{
-                    checked_bytes = checked_bytes.add(<#field_type as ::simple_parse::SpOptHints>::STATIC_SIZE);
-                }
+                checked_bytes = checked_bytes.add(#cur_field_size);
             });
         }
     }
@@ -413,7 +396,7 @@ fn generate_enum_read(
 
         let log_call = if cfg!(feature = "verbose") {
             quote! {
-                ::log::debug!("Variant `{}`", stringify!(#variant_name));
+                ::simple_parse::debug!("Read variant {}", stringify!(#variant_name));
             }
         } else {
             quote! {}

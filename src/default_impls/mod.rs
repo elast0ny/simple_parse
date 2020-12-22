@@ -42,7 +42,7 @@ macro_rules! impl_read {
             where
                 Self: Sized + SpOptHints {
                 let mut tmp = [0u8; $static_size];
-                
+
                 // Remove count size if count was provided
                 let dst = if Self::COUNT_SIZE > 0 && count.is_some() {
                     &mut tmp[..$static_size - Self::COUNT_SIZE]
@@ -231,10 +231,10 @@ pub fn validate_reader<R: Read + ?Sized>(
     while bytes_read < static_size {
         let cur_len = dst.len();
         let cur_chunk_len = std::cmp::min(MAX_ALLOC_SIZE, static_size - bytes_read);
-        
+
         // Allocate an extra chunk at end of vec
         dst.reserve(cur_chunk_len);
-        
+
         // Increase len and get slice to new chunk
         unsafe {
             dst.set_len(cur_len + cur_chunk_len);
@@ -249,7 +249,7 @@ pub fn validate_reader<R: Read + ?Sized>(
             }
             return Err(e);
         }
-        
+
         bytes_read += cur_chunk_len;
     }
 
@@ -258,13 +258,9 @@ pub fn validate_reader<R: Read + ?Sized>(
 
 /// Consumes dst bytes from the reader
 #[inline(always)]
-pub fn validate_reader_exact<R: Read + ?Sized>(
-    dst: &mut [u8],
-    src: &mut R,
-) -> Result<(), SpError> {
-    
+pub fn validate_reader_exact<R: Read + ?Sized>(dst: &mut [u8], src: &mut R) -> Result<(), SpError> {
     #[cfg(feature = "verbose")]
-    crate::debug!("read({})", dst.len());
+    crate::debug!("Read({})", dst.len());
 
     // Copy from reader into our stack variable
     if src.read_exact(dst).is_err() {
@@ -281,7 +277,6 @@ pub fn validate_cursor<T: AsRef<[u8]>>(
     static_size: usize,
     src: &mut Cursor<T>,
 ) -> Result<*mut u8, crate::SpError> {
-
     let idx = src.position();
     let bytes = src.get_ref().as_ref();
 
@@ -363,11 +358,16 @@ macro_rules! iterator_to_writer {
 /// Copies a primitive type from a raw pointer
 #[macro_use]
 macro_rules! prim_from_ptr {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
         let _ = $count;
         let _ = $src;
+
         #[cfg(feature = "verbose")]
-        crate::debug!("Copy {}", stringify!($typ));
+        crate::debug!(
+            "Copy {} : 0x{:X}",
+            stringify!($typ),
+            std::ptr::read_unaligned($checked_bytes as *mut $as_typ)
+        );
 
         // We assume checked_bytes has been validated to hold at least Self::STATIC_SIZE
         let val: $typ = std::ptr::read_unaligned($checked_bytes as *const $typ);
@@ -377,7 +377,7 @@ macro_rules! prim_from_ptr {
                 val
             } else {
                 #[cfg(feature = "verbose")]
-                crate::debug!("swap to big endian");
+                crate::debug!("swap to native (big) endian");
                 val.swap_bytes()
             }
         } else {
@@ -385,7 +385,7 @@ macro_rules! prim_from_ptr {
                 val
             } else {
                 #[cfg(feature = "verbose")]
-                crate::debug!("swap to little endian");
+                crate::debug!("swap to native (little) endian");
                 val.swap_bytes()
             }
         })
@@ -398,16 +398,23 @@ macro_rules! mutref_from_ptr {
         let _ = $count;
         let _ = $src;
         let _ = $is_input_le;
+
         #[cfg(feature = "verbose")]
-        crate::debug!("Copy {}", stringify!($typ));
+        crate::debug!(
+            "Copy {} : 0x{:X}",
+            stringify!($typ),
+            std::ptr::read_unaligned($checked_bytes as *mut $as_typ)
+        );
 
         // Make sure to only make references to properly aligned pointers
-        if std::mem::align_of::<$as_typ>() > 1 && $checked_bytes.align_offset(std::mem::align_of::<$as_typ>()) != 0 {
+        if std::mem::align_of::<$as_typ>() > 1
+            && $checked_bytes.align_offset(std::mem::align_of::<$as_typ>()) != 0
+        {
             return Err(SpError::BadAlignment);
         }
 
         // Convert pointer to Rust reference
-        Ok(&mut *($checked_bytes as *mut $as_typ))
+        Ok(&mut *($checked_bytes as *mut $typ))
     }};
 }
 /// Copies a bool from a raw pointer

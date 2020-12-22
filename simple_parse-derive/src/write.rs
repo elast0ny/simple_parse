@@ -44,8 +44,8 @@ pub fn generate(input: &mut DeriveInput) -> TokenStream {
         }
     };
 
-    #[cfg(feature = "print-generated")]
-    println!("{}", res.to_string());
+    //#[cfg(feature = "print-generated")]
+    //println!("{}", res.to_string());
 
     res
 }
