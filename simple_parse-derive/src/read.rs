@@ -281,8 +281,10 @@ fn generate_fields_read(
         };
 
         // Get custom reader if provided
+        #[allow(unreachable_code, unused_variables)]
         let read_call = match field_attrs.reader {
             Some(ref s) => {
+                panic!("Custom reader not implemented yet !");
                 let s: TokenStream = s.parse().unwrap();
                 quote! {
                     {

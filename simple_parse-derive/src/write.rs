@@ -126,8 +126,10 @@ fn generate_fields_write(
         }
 
         // Pick between custom write or default
+        #[allow(unreachable_code, unused_variables)]
         let write_call = match field_attrs.writer {
             Some(s) => {
+                panic!("Custom writer not implemented yet !");
                 let s: TokenStream = s.parse().unwrap();
                 let ref_mut = if prefix.is_some() {
                     quote! {
