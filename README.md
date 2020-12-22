@@ -4,7 +4,7 @@
 [![mio](https://docs.rs/simple_parse/badge.svg)](https://docs.rs/simple_parse/)
 ![Lines of Code](https://tokei.rs/b1/github/elast0ny/simple_parse)
 
-simple_parse is a declarative binary stream parser that aims to generate the most efficient parsing code possible for your custom types while remaining safe.
+simple_parse is a declarative binary stream parser/generater that aims to generate the most efficient parsing code possible for your custom types while remaining safe.
 
 
 | Features | Description |
@@ -12,9 +12,9 @@ simple_parse is a declarative binary stream parser that aims to generate the mos
 | Fast| The generated parsing code is often faster than "idiomatic" C implementations|
 | [No copy](examples/no_copy.rs) | Able to return references into byte slices |
 | Built-in endianness support | Annotating structs/fields with `endian` gives control over how numbers will be parsed |
-|Custom implementations | Custom parsers can be writen for individual fields when simple_parse doesnt have the adequate default implementation|
+| Convert back to bytes | In addition to parsing arbitrary bytes, simple_parse also allows dumping structs back into binary form |
 
-
+***
 
 If simple_parse is unable to describe your complex/non-standard binary formats, take a look at [deku](https://github.com/sharksforarms/deku).
 
