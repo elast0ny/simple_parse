@@ -197,6 +197,6 @@ pub trait SpWrite {
 
     /// Writes the byte representation for Self into a `&mut Write`
     fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-        self.inner_to_writer(cfg!(target_endian = "little"), false, dst)
+        self.inner_to_writer(cfg!(target_endian = "little"), true, dst)
     }
 }

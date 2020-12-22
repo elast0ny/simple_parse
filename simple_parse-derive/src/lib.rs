@@ -247,13 +247,22 @@ pub(crate) fn is_var_size(typ: &Type, attrs: Option<&FieldAttributes>) -> bool {
         }
     }
 
-    let field_ty = quote! {#typ}.to_string();
+    let field_ty: String =
+    match typ {
+        syn::Type::Reference(r) => {
+            let t = r.elem.as_ref();
+            (quote!{&#t}).to_string()
+        },
+        _ => {
+            (quote!{#typ}).to_string()
+        },
+    };
 
     // All the types we know are dynamic
-    if field_ty.starts_with("&[")
-        || field_ty == "&str"
+    if field_ty.starts_with("& [")
+        || field_ty == "& str"
         || field_ty == "String"
-        || field_ty == "&CStr"
+        || field_ty == "& CStr"
         || field_ty == "CString"
         || field_ty.starts_with("Option <")
         || field_ty.starts_with("Vec <")

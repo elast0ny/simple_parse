@@ -109,8 +109,18 @@ pub (crate) fn generate_struct_hints(
         
         if is_var_type {
             got_var = true;
+            let t = match field_type {
+                // Remove lifetimes from references
+                syn::Type::Reference(r) => {
+                    let t = r.elem.as_ref();
+                    quote!{&#t}
+                }
+                _ => {
+                    quote!{#field_type}
+                }
+            };
             r.const_asserts.extend(quote!{
-                ::simple_parse::sa::const_assert!(<#field_type as ::simple_parse::SpOptHints>::IS_VAR_SIZE == true);
+                ::simple_parse::sa::const_assert!(<#t as ::simple_parse::SpOptHints>::IS_VAR_SIZE == true);
                 
             });
         } else {

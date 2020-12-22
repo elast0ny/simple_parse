@@ -15,7 +15,7 @@ fn generate_validate_size_code(static_size: &TokenStream, reader_type: &ReaderTy
         },
         _ => {
             quote! {
-                checked_bytes = validate_cursor(#static_size, src)?;
+                checked_bytes = ::simple_parse::validate_cursor(#static_size, src)?;
             }
         }
     }
@@ -139,7 +139,7 @@ pub(crate) fn generate(
 
                     unsafe fn inner_from_slice_unchecked(
                         mut checked_bytes: *const u8,
-                        src: &mut Cursor<&#lifetime [u8]>,
+                        src: &mut std::io::Cursor<&#lifetime [u8]>,
                         is_input_le: bool,
                         count: Option<usize>,
                     ) -> Result<Self, ::simple_parse::SpError>
@@ -179,7 +179,7 @@ pub(crate) fn generate(
 
                     unsafe fn inner_from_mut_slice_unchecked(
                         mut checked_bytes: *mut u8,
-                        src: &mut Cursor<&#lifetime mut [u8]>,
+                        src: &mut std::io::Cursor<&#lifetime mut [u8]>,
                         is_input_le: bool,
                         count: Option<usize>,
                     ) -> Result<Self, ::simple_parse::SpError>

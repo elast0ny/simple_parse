@@ -74,20 +74,17 @@ impl_writer!(CString, tobytes_to_writer);
 
 macro_rules! option_to_writer {
     ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident $(, $generics:tt $(: $bound:ident $(+ $other:ident)*)?)*) => {{
-        let is_some: DefaultCountType;
         let mut total_sz: usize = 0;
         match $self {
             Some(v) => {
                 if $prepend_count {
-                    is_some = 1;
-                    total_sz += is_some.inner_to_writer($is_output_le, $prepend_count, $dst)?;
+                    total_sz += (true).inner_to_writer($is_output_le, $prepend_count, $dst)?;
                 }
                 total_sz += v.inner_to_writer($is_output_le, $prepend_count, $dst)?;
             }
             None => {
                 if $prepend_count {
-                    is_some = 0;
-                    total_sz += is_some.inner_to_writer($is_output_le, $prepend_count, $dst)?
+                    total_sz += (false).inner_to_writer($is_output_le, $prepend_count, $dst)?;
                 }
             }
         }

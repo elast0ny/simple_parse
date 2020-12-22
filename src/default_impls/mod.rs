@@ -364,12 +364,11 @@ macro_rules! prim_from_ptr {
 
         #[cfg(feature = "verbose")]
         crate::debug!(
-            "Copy {} : 0x{:X}",
+            "[{}] = 0x{:X}",
             stringify!($typ),
             std::ptr::read_unaligned($checked_bytes as *mut $as_typ)
         );
 
-        // We assume checked_bytes has been validated to hold at least Self::STATIC_SIZE
         let val: $typ = std::ptr::read_unaligned($checked_bytes as *const $typ);
 
         Ok(if $is_input_le {
@@ -401,7 +400,7 @@ macro_rules! mutref_from_ptr {
 
         #[cfg(feature = "verbose")]
         crate::debug!(
-            "Copy {} : 0x{:X}",
+            "[{}] = 0x{:X}",
             stringify!($typ),
             std::ptr::read_unaligned($checked_bytes as *mut $as_typ)
         );
