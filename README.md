@@ -4,14 +4,23 @@
 [![mio](https://docs.rs/simple_parse/badge.svg)](https://docs.rs/simple_parse/)
 ![Lines of Code](https://tokei.rs/b1/github/elast0ny/simple_parse)
 
-A declarative converter for Rust type to and from binary.
+simple_parse is a declarative binary stream parser that aims to generate the most efficient parsing code possible for your custom types while remaining safe.
 
-It provides basic implementations for most [standard Rust types](https://docs.rs/simple_parse/latest/simple_parse/trait.SpReadRawMut.html#foreign-impls) and also provides a derive macro to automatically implement the trait on your own types !
 
-For bit level control or more advanced features, take a look at [deku](https://github.com/sharksforarms/deku).
+| Features | Description |
+|:----:|:----|
+| Fast| The generated parsing code is often faster than "idiomatic" C implementations|
+| [No copy](examples/no_copy.rs) | Able to return references into byte slices |
+| Built-in endianness support | Annotating structs/fields with `endian` gives control over how numbers will be parsed |
+|Custom implementations | Custom parsers can be writen for individual fields when simple_parse doesnt have the adequate default implementation|
+
+
+
+If simple_parse is unable to describe your complex/non-standard binary formats, take a look at [deku](https://github.com/sharksforarms/deku).
 
 ## Usage
 
+Snippets taken from [examples/struct.rs](examples/struct.rs)
 ```Rust
 use ::simple_parse::{SpRead, SpWrite};
 
@@ -22,33 +31,24 @@ pub struct SomeStruct {
     pub items: Vec<u32>,
 }
 
-let mut cursor: &[u8] = &[
+// Emulate data coming from a socket
+let mut srv_sock: &[u8] = &[
     1,                      // some_field
-    2,0,0,0,0,0,0,0,        // items.len()
+    0,0,0,2,                // items.len()
     0xDE,0xAD,0xBE,0xEF,    // items[0]
     0xBA,0xDC,0x0F,0xFE     // items[1]
 ];
 
-// Decode bytes into a struct
-let mut my_struct = SomeStruct::from_reader(&mut cursor)?;
+// Parse incoming bytes into SomeStruct
+let mut my_struct = SomeStruct::from_reader(&mut srv_sock)?;
 
 /// Modify the struct
 my_struct.items.push(0xFFFFFFFF);
 
-/// Encode modified struct into bytes
-let mut dst_buf: Vec<u8> = Vec::new();
-my_struct.to_writer(&mut dst_buf)?;
-//dst_buf == [1,3,0,0,0,0,0,0,0,0xDE,0xAD,0xBE,0xEF,0xBA,0xDC,0x0F,0xFE,0xFF,0xFF,0xFF,0xFF]
+/// Encode our struct back into bytes
+let mut cli_sock: Vec<u8> = Vec::new();
+my_struct.to_writer(&mut cli_sock)?;
+//dst_buf == [1, 0, 0, 0, 3, DE, AD, BE, EF, BA, DC, F, FE, FF, FF, FF, FF]
 ```
 
 For complete examples see : [examples](examples/)
-
-
-## Features
-
-| Feature | Description |
-|:----:|:----|
-| No-copy parsing | simple_parse is able to generate valid references into byte slices (see [struct.rs](examples/struct.rs)) |
-| [count](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs#L45) | Annotating a dynamically sized field with `count` allows it's number of items to live somewhere else in the struct. The default is to simply prepend the number of items as a u64|
-| [endian](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs#L17) | Annotating structs/fields with `endian` gives control over how numbers will be parsed |
-|Custom [read](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs#L57)/[write](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs#L67) | Custom parsers can be writen for individual fields when simple_parse doesnt have the adequate default implementation|
