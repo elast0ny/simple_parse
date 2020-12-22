@@ -1,3 +1,7 @@
+/**
+ * Demonstrates the use of simple_parse's no-copy capabilities
+ */
+
 use ::simple_parse::{SpOptHints, SpReadRaw, SpWrite};
 
 // You must derive SpOptHints manualy when not using SpRead

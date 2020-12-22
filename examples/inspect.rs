@@ -17,8 +17,9 @@ use simple_parse::{SpRead, SpWrite};
 #[derive(Debug, SpRead, SpWrite)]
 pub enum Message {
     ClientLogin(
-        // simple_parse does not know the LoginInfo type.
+        // simple_parse does not know about LoginInfo while generating code for `enum Message`
         // We must explicitly say that it is variably sized (because it contains a variably sized type)
+        // Or else compilation will fail
         #[sp(var_size)]
         LoginInfo,
     ),
