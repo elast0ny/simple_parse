@@ -19,7 +19,7 @@ pub(crate) enum ReaderType {
 }
 
 #[proc_macro_derive(SpOptHints, attributes(sp))]
-/// Automatically implements SpOptHints
+/// Implements SpOptHints
 ///
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_opt_hints(input: TokenStream) -> TokenStream {
@@ -29,7 +29,7 @@ pub fn generate_opt_hints(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_derive(SpRead, attributes(sp))]
-/// Automatically implements SpRead and SpOptHints
+/// Implements SpRead and SpOptHints
 ///
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_read(input: TokenStream) -> TokenStream {
@@ -38,7 +38,7 @@ pub fn generate_read(input: TokenStream) -> TokenStream {
     proc_macro::TokenStream::from(res)
 }
 #[proc_macro_derive(SpReadRaw, attributes(sp))]
-/// Automatically implements SpReadRaw
+/// Implements SpReadRaw
 ///
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_readraw(input: TokenStream) -> TokenStream {
@@ -47,7 +47,7 @@ pub fn generate_readraw(input: TokenStream) -> TokenStream {
     proc_macro::TokenStream::from(res)
 }
 #[proc_macro_derive(SpReadRawMut, attributes(sp))]
-/// Automatically implements SpReadRawMut
+/// Implements SpReadRawMut
 ///
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_readrawmut(input: TokenStream) -> TokenStream {
@@ -57,7 +57,7 @@ pub fn generate_readrawmut(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_derive(SpWrite, attributes(sp))]
-/// Automatically implements SpWrite
+/// Implements SpWrite
 ///
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_write(input: TokenStream) -> TokenStream {

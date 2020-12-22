@@ -3,6 +3,8 @@ use std::io::{Cursor, Read, Write};
 #[cfg(feature = "verbose")]
 pub use log::debug;
 
+#[doc(hidden)]
+/// Allows for compile time assertions in the generated derive code
 pub use static_assertions as sa;
 
 mod error;
@@ -13,10 +15,11 @@ pub use default_impls::*;
 
 pub use simple_parse_derive::*;
 
-/// This type MUST be included in dynamic types STATIC_SIZE.
-/// When #[sp(count)] is provided, <DefaultCountType>::STATIC_SIZE is substracted from your type's STATIS_SIZE.
+#[doc(hidden)]
+/// This type is used for dynamically sized type's default implementations
 pub type DefaultCountType = u32;
 
+#[doc(hidden)]
 /// This is a safeguard against reading malicious/malformed dynamically sized types.
 /// For example, when reading a String that says it contains INT_MAX characters, chunks of
 /// MAX_ALLOC_SIZE will be read at a time instead of allocating INT_MAX bytes in one go.

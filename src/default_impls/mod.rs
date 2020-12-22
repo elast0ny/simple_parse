@@ -480,14 +480,14 @@ macro_rules! new_empty {
 }
 
 // Implementations of SpOptHints
-pub mod opt_hints;
+mod opt_hints;
 pub use opt_hints::*;
 // Implementations of SpReadRaw and SpReadRawMut
-pub mod raw;
+mod raw;
 pub use raw::*;
 // Implementations of SpRead
-pub mod reader;
+mod reader;
 pub use reader::*;
 // Implementations of SpWrite
-pub mod writer;
+mod writer;
 pub use writer::*;
