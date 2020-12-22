@@ -4,7 +4,7 @@
 [![mio](https://docs.rs/simple_parse/badge.svg)](https://docs.rs/simple_parse/)
 ![Lines of Code](https://tokei.rs/b1/github/elast0ny/simple_parse)
 
-simple_parse is a declarative binary stream parser/generater that aims to generate the most efficient parsing code possible for your custom types while remaining safe.
+simple_parse is a declarative binary stream parser that aims to generate the most efficient parsing code possible for your custom types while remaining safe.
 
 
 | Features | Description |
