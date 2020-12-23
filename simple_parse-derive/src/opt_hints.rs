@@ -11,9 +11,9 @@ pub (crate) enum IsVar {
 }
 
 pub (crate) struct GeneratedOptHints {
-    is_var: IsVar,
-    static_size: TokenStream,
-    const_asserts: TokenStream,
+    pub is_var: IsVar,
+    pub static_size: TokenStream,
+    pub const_asserts: TokenStream,
 }
 impl Default for GeneratedOptHints {
     fn default() -> Self {

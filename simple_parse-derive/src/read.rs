@@ -8,7 +8,7 @@ fn generate_validate_size_code(static_size: &TokenStream, reader_type: &ReaderTy
     match reader_type {
         ReaderType::Reader => {
             quote! {
-                let mut tmp = [0u8; #static_size];            
+                tmp = [0u8; #static_size];            
                 ::simple_parse::validate_reader_exact(&mut tmp, src)?;
                 checked_bytes = tmp.as_mut_ptr();
             }
@@ -93,6 +93,7 @@ pub(crate) fn generate(
                 {
                     #log_call
                     let mut checked_bytes: *mut u8 = std::ptr::null_mut();
+                    let mut tmp;
                     #static_validation_code
                     unsafe {
                         Self::inner_from_reader_unchecked(checked_bytes, src, is_input_le, count)
@@ -312,6 +313,7 @@ fn generate_fields_read(
                 let validate_static_size =
                     generate_validate_size_code(&quote! {#static_size_code}, &reader_type);
                 read_code.extend(quote! {
+                    let mut tmp;
                     #validate_static_size
                 });
 
@@ -380,8 +382,18 @@ fn generate_enum_read(
                 &variant.fields,
                 var_attrs.endian.as_deref()
             );
+
+            let res = opt_hints::generate_struct_hints(&variant.fields);
+            let fields_size = res.static_size;
+            let validate_field_size = generate_validate_size_code(&quote!{#fields_size}, reader_type);
             (
-                read,
+                quote!{
+                    let mut tmp;
+                    if <Self as ::simple_parse::SpOptHints>::STATIC_SIZE == <#id_type as ::simple_parse::SpOptHints>::STATIC_SIZE {
+                        #validate_field_size
+                    }
+                    #read
+                },
                 if let syn::Fields::Unnamed(_r) = &variant.fields {
                     quote! {
                         (#list)
