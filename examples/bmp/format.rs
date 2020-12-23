@@ -1,6 +1,7 @@
-use simple_parse::{SpRead, SpError, validate_reader_exact};
+use simple_parse::{SpRead, SpWrite, SpError, validate_reader_exact};
+use std::io::{Read, Write};
 
-#[derive(Debug, SpRead)]
+#[derive(Debug, SpRead, SpWrite)]
 #[sp(endian = "little")] // The BMP format forces little endian
 pub struct BmpHeader {
     pub magic1: u8,
@@ -14,7 +15,7 @@ pub struct BmpHeader {
 }
 
 // You differentiate DIB header types by their size...
-#[derive(Debug, SpRead)]
+#[derive(Debug, SpRead, SpWrite)]
 #[sp(id_type = "u32", endian = "little")] // The BMP format forces little endian
 pub enum DIBHeader {
     // Only support BITMAPINFOHEADER for this toy example
@@ -31,10 +32,15 @@ pub enum DIBHeader {
         clr_used: u32,
         important: u32,
         // The logic for parsing the two fields bellow is complicated. We must use custom readers.
-        #[sp(reader="BitmapCompression::read, compression")]
+        #[sp(
+            reader="BitmapCompression::read, compression",
+            writer="BitmapCompression::write"
+        )]
         compression_info: BitmapCompression,
-        
-        #[sp(reader="parse_color_table, clr_used, compression_info, bit_count")]
+        #[sp(
+            reader="parse_color_table, clr_used, compression_info, bit_count",
+            writer="write_color_table"
+        )]
         color_palette: Vec<RgbQuad>,
     },
 }
@@ -56,7 +62,7 @@ pub enum BitmapCompression {
 }
 impl BitmapCompression {
     // Custom SpRead parser based on the compression value
-    fn read<R: std::io::Read + ?Sized>(compression_bitmask: &u32, src: &mut R, is_input_le: bool, count: Option<usize>) -> Result<Self, SpError> {
+    fn read<R: Read + ?Sized>(compression_bitmask: &u32, src: &mut R, is_input_le: bool, count: Option<usize>) -> Result<Self, SpError> {
         const BI_RGB: u32 = 0;
         const BI_BITFIELDS : u32 = 3;
         const BI_ALPHABITFIELDS: u32 = 6;
@@ -96,10 +102,29 @@ impl BitmapCompression {
             _ => Err(SpError::InvalidBytes)
         }
     }
+    // Custom SpWrite
+    fn write<W: Write + ?Sized>(this: &BitmapCompression, is_output_le: bool, prepend_count: bool, dst: &mut W) -> Result<usize, SpError> {
+        match this {
+            &Self::None => Ok(0),
+            &Self::AlphaBitFields{alpha, red, green, blue} => {
+                alpha.inner_to_writer(is_output_le, prepend_count, dst)?;
+                red.inner_to_writer(is_output_le, prepend_count, dst)?;
+                green.inner_to_writer(is_output_le, prepend_count, dst)?;
+                blue.inner_to_writer(is_output_le, prepend_count, dst)?;
+                Ok(16)
+            },
+            &Self::BitFields{red, green, blue} => {
+                red.inner_to_writer(is_output_le, prepend_count, dst)?;
+                green.inner_to_writer(is_output_le, prepend_count, dst)?;
+                blue.inner_to_writer(is_output_le, prepend_count, dst)?;
+                Ok(12)
+            },
+        }
+    }
 }
 
 /// holds a color from the bmp color table
-#[derive(Debug, SpRead)]
+#[derive(Debug, SpRead, SpWrite)]
 pub struct RgbQuad {
     blue: u8,
     green: u8,
@@ -108,7 +133,7 @@ pub struct RgbQuad {
 }
 
 /// Parses a BMP color table based on header values
-fn parse_color_table<R: std::io::Read + ?Sized>(clr_used: &u32, compression: &BitmapCompression, bit_count: &u16, src: &mut R, is_input_le: bool, count: Option<usize>) -> Result<Vec<RgbQuad>, SpError> {
+fn parse_color_table<R: Read + ?Sized>(clr_used: &u32, compression: &BitmapCompression, bit_count: &u16, src: &mut R, is_input_le: bool, count: Option<usize>) -> Result<Vec<RgbQuad>, SpError> {
     // The bitmap is not compressed which means every pixel contains the actual color information.
     // The Color table is supposed to be empty
     if let BitmapCompression::None = compression {
@@ -139,4 +164,14 @@ fn parse_color_table<R: std::io::Read + ?Sized>(clr_used: &u32, compression: &Bi
     }
 
     Ok(res)
+}
+
+/// Writes BMP a color table
+fn write_color_table<W: Write + ?Sized>(table: &Vec<RgbQuad>, is_output_le: bool, prepend_count: bool, dst: &mut W) -> Result<usize, SpError> {
+    let mut size_written = 0;
+    // extra validation could be done here to ensure clr_used and bit_count is valid for these colors
+    for color in table.iter() {
+        size_written += color.inner_to_writer(is_output_le, prepend_count, dst)?;
+    }
+    Ok(size_written)
 }

@@ -89,6 +89,7 @@ fn generate_fields_write(
     
     // Generate write call for every field
     for (idx, field) in fields.iter().enumerate() {
+        let field_name = generate_field_name(field, idx, None, false);
         let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
         let field_ident = generate_field_name(field, idx, prefix, false);
 
@@ -126,25 +127,16 @@ fn generate_fields_write(
         }
 
         // Pick between custom write or default
-        #[allow(unreachable_code, unused_variables)]
         let write_call = match field_attrs.writer {
-            Some(s) => {
-                panic!("Custom writer not implemented yet !");
-                let s: TokenStream = s.parse().unwrap();
-                let ref_mut = if prefix.is_some() {
-                    quote! {
-                        &mut
+            Some(ref s) => {
+                let (fn_name, dependent_fields) = match split_custom_attr(s, &fields, idx, None) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        panic!("Invalid custom writer for field '{}', {}",field_name.to_string(), e);
                     }
-                } else {
-                    quote! {}
                 };
-                quote! {
-                    {
-                        let _self = #ref_mut #field_ident;
-                        let is_output_le = #is_output_le;
-                        let prepend_count = #prepend_count;
-                        #s
-                    }
+                quote!{
+                    #fn_name(&#field_ident, #dependent_fields #is_output_le, #prepend_count, dst)
                 }
             }
             None => {

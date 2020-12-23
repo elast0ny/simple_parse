@@ -7,14 +7,15 @@
 
 use clap::{App, Arg};
 use env_logger::Builder;
-use simple_parse::{SpRead};
-use std::io::Write;
+use simple_parse::{SpRead, SpWrite};
+use std::io::{Read, Write, Seek};
 
 mod format;
 use format::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut builder = Builder::from_default_env();
+    
     builder
         .format(|buf, record| writeln!(buf, "[{}] {}", record.level(), record.args()))
         .init();
@@ -54,7 +55,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )));
     }
 
+    // Print parsed values
     println!("{:?}", header);
+
+    // Get number of bytes we've read so far
+    let last_pos = file.seek(std::io::SeekFrom::Current(0))? as usize;
+    let mut orig_data = Vec::with_capacity(last_pos);
+    unsafe {orig_data.set_len(last_pos)};
+    
+    // Read back original bytes as a Vec<u8>
+    file.seek(std::io::SeekFrom::Start(0))?;
+    file.read_exact(orig_data.as_mut_slice())?;
+    
+    // Write header back into bytes
+    let mut generated_data = Vec::new();
+    header.to_writer(&mut generated_data)?;
+    println!("Back into bytes :\n{:X?}", generated_data);
+    
+    // The generated data should match the original data
+    assert_eq!(orig_data, generated_data.as_slice());
 
     Ok(())
 }
