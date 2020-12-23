@@ -14,6 +14,7 @@ macro_rules! impl_primitive_noref {
     ($typ:ty, $as_copy:ident) => {
         impl_primitive_noref!($typ as $typ, $as_copy);
     };
+    // Implements SpReadRaw & SpReadRawMut for T
     ($typ:ty as $as_typ:ty, $as_copy:ident) => {
         impl_readraw!($typ as $as_typ, $as_copy);
         impl_readrawmut!($typ as $as_typ, $as_copy);
@@ -25,17 +26,22 @@ macro_rules! impl_primitive {
     ($typ:ty, $as_copy:ident) => {
         impl_primitive!($typ as $typ, $as_copy);
     };
+    // When no converter to ref and slice is provided, default to using primitve impls
     ($typ:ty as $as_typ:ty, $as_copy:ident) => {
+        impl_primitive!($typ as $as_typ, $as_copy, mutref_from_ptr, mutslice_from_cursor);
+    };
+    // Implements SpReadRaw & SpReadRawMut for T, &T, &mut T, &[T] and &mut [T]
+    ($typ:ty as $as_typ:ty, $as_copy:ident, $as_ref:ident, $as_slice:ident) => {
         // Copy
         impl_primitive_noref!($typ as $as_typ, $as_copy);
         // References
-        impl_readraw!(&$typ as $as_typ, mutref_from_ptr);
-        impl_readrawmut!(&$typ as $as_typ, mutref_from_ptr);
-        impl_readrawmut!(&mut $typ as $as_typ, mutref_from_ptr);
+        impl_readraw!(&$typ as $as_typ, $as_ref);
+        impl_readrawmut!(&$typ as $as_typ, $as_ref);
+        impl_readrawmut!(&mut $typ as $as_typ, $as_ref);
         // Slices
-        impl_readraw!(&[$typ] as $as_typ, mutslice_from_cursor);
-        impl_readrawmut!(&[$typ] as $as_typ, mutslice_from_cursor);
-        impl_readrawmut!(&mut [$typ] as $as_typ, mutslice_from_cursor);
+        impl_readraw!(&[$typ] as $as_typ, $as_slice);
+        impl_readrawmut!(&[$typ] as $as_typ, $as_slice);
+        impl_readrawmut!(&mut [$typ] as $as_typ, $as_slice);
     };
 }
 
@@ -97,18 +103,56 @@ impl_primitive!(AtomicI64 as i64, atomic_from_ptr);
 impl_primitive!(AtomicIsize as isize, atomic_from_ptr);
 impl_primitive_noref!(AtomicBool as bool, atomic_from_ptr);
 
-impl_primitive!(NonZeroU8 as u8, nonzero_from_ptr);
-impl_primitive!(NonZeroU16 as u16, nonzero_from_ptr);
-impl_primitive!(NonZeroU32 as u32, nonzero_from_ptr);
-impl_primitive!(NonZeroU64 as u64, nonzero_from_ptr);
-impl_primitive!(NonZeroU128 as u128, nonzero_from_ptr);
-impl_primitive!(NonZeroUsize as usize, nonzero_from_ptr);
-impl_primitive!(NonZeroI8 as i8, nonzero_from_ptr);
-impl_primitive!(NonZeroI16 as i16, nonzero_from_ptr);
-impl_primitive!(NonZeroI32 as i32, nonzero_from_ptr);
-impl_primitive!(NonZeroI64 as i64, nonzero_from_ptr);
-impl_primitive!(NonZeroI128 as i128, nonzero_from_ptr);
-impl_primitive!(NonZeroIsize as isize, nonzero_from_ptr);
+// Converts a raw pointer to a NonZero reference validating the contents
+macro_rules! nonzeroref_from_ptr {
+    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        // First get ref to primitive type
+        let prim_ref = <&$as_typ>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
+
+        // Make sure the &NonZero is not 0
+        if *prim_ref == 0 {
+            return Err(SpError::InvalidBytes);
+        }
+
+        Ok(&mut *(prim_ref as *const $as_typ as *mut $as_typ as *mut _))
+    }};
+}
+
+// Converts a raw pointer to a slice of NonZero validating the contents
+macro_rules! nonzeroslice_from_ptr {
+    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        // First get ref to primitive type
+        let prim_slice = <&[$as_typ]>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
+
+        // Make sure the &NonZero is not 0
+        for v in prim_slice.iter() {
+            if *v == 0 {
+                return Err(SpError::InvalidBytes);
+            }
+        }
+
+        // Convert to NonZeroT slice from &[T]
+        let nz_slice = std::slice::from_raw_parts_mut(
+            prim_slice.as_ptr() as *mut _,
+            prim_slice.len()
+        );
+
+        Ok(nz_slice)
+    }};
+}
+
+impl_primitive!(NonZeroU8 as u8, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
+impl_primitive!(NonZeroU16 as u16, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
+impl_primitive!(NonZeroU32 as u32, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
+impl_primitive!(NonZeroU64 as u64, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
+impl_primitive!(NonZeroU128 as u128, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
+impl_primitive!(NonZeroUsize as usize, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
+impl_primitive!(NonZeroI8 as i8, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
+impl_primitive!(NonZeroI16 as i16, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
+impl_primitive!(NonZeroI32 as i32, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
+impl_primitive!(NonZeroI64 as i64, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
+impl_primitive!(NonZeroI128 as i128, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
+impl_primitive!(NonZeroIsize as isize, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
 
 /* String types */
 

@@ -359,6 +359,8 @@ macro_rules! iterator_to_writer {
 #[macro_use]
 macro_rules! prim_from_ptr {
     ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        // Make sure we never accidentaly cast between invalid types
+        crate::sa::const_assert_eq!(std::mem::size_of::<$typ>(), std::mem::size_of::<$as_typ>());
         let _ = $count;
         let _ = $src;
 
@@ -394,6 +396,10 @@ macro_rules! prim_from_ptr {
 #[macro_use]
 macro_rules! mutref_from_ptr {
     ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        // Make sure we never accidentaly cast between invalid types
+        crate::sa::const_assert_eq!(std::mem::size_of::<$typ>(), std::mem::size_of::<$as_typ>());
+        crate::sa::const_assert_eq!(std::mem::align_of::<$typ>(), std::mem::align_of::<$as_typ>());
+
         let _ = $count;
         let _ = $src;
         let _ = $is_input_le;
@@ -420,6 +426,7 @@ macro_rules! mutref_from_ptr {
 #[macro_use]
 macro_rules! bool_from_ptr {
     ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        // Make sure we never accidentaly cast between invalid types
         crate::sa::const_assert!(std::mem::size_of::<$typ>() == std::mem::size_of::<$as_typ>());
         // Read as unsigned & proper endianness
         let val = <$as_typ>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
@@ -431,6 +438,7 @@ macro_rules! bool_from_ptr {
 #[macro_use]
 macro_rules! float_from_ptr {
     ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        // Make sure we never accidentaly cast between invalid types
         crate::sa::const_assert!(std::mem::size_of::<$typ>() == std::mem::size_of::<$as_typ>());
         // Read as unsigned & proper endianness
         let val = <$as_typ>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
@@ -443,6 +451,7 @@ macro_rules! float_from_ptr {
 #[macro_use]
 macro_rules! atomic_from_ptr {
     ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        // Make sure we never accidentaly cast between invalid types
         crate::sa::const_assert!(std::mem::size_of::<$typ>() == std::mem::size_of::<$as_typ>());
         // Read as unsigned & proper endianness
         let val = <$as_typ>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
@@ -455,6 +464,7 @@ macro_rules! atomic_from_ptr {
 #[macro_use]
 macro_rules! nonzero_from_ptr {
     ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+        // Make sure we never accidentaly cast between invalid types
         crate::sa::const_assert!(std::mem::size_of::<$typ>() == std::mem::size_of::<$as_typ>());
         // Read as unsigned & proper endianness
         let val = <$as_typ>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
