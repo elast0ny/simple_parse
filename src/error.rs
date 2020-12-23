@@ -6,13 +6,13 @@ use std::fmt;
 pub enum SpError {
     /// The data we attempted to decode did not contain a valid enum variant
     UnknownEnumVariant,
-    /// The is not enough space to decode into T or to write T into the writer
+    /// There is not enough space to write T into the writer
     NotEnoughSpace,
     /// An annotated count field's type is too small to fit the number of elements
     CountFieldOverflow,
-    /// The data contained enough bytes but the format was wrong
+    /// The data contained enough bytes but the contents were invalid
     InvalidBytes,
-    /// The bytes were mis-aligned
+    /// A Rust reference cannot be created as the data is misaligned
     BadAlignment,
 }
 impl fmt::Display for SpError {

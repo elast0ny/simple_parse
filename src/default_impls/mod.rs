@@ -397,8 +397,7 @@ macro_rules! prim_from_ptr {
 macro_rules! mutref_from_ptr {
     ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
         // Make sure we never accidentaly cast between invalid types
-        crate::sa::const_assert_eq!(std::mem::size_of::<$typ>(), std::mem::size_of::<$as_typ>());
-        crate::sa::const_assert_eq!(std::mem::align_of::<$typ>(), std::mem::align_of::<$as_typ>());
+        crate::sa::const_assert_eq!(std::mem::align_of::<$typ>(), std::mem::align_of::<&$as_typ>());
 
         let _ = $count;
         let _ = $src;
