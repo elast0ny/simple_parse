@@ -73,7 +73,7 @@ pub(crate) struct FieldAttributes {
     ///         optionnal: Option<usize>,
     ///     }
     /// Will end up generating code that calls a function with signature :
-    ///     fn custom_parser(some_field: &bool, src: CustomSrc, is_input_le:bool, count: Option<usize>) -> Result<T, SpError>
+    ///     fn custom_parser(some_field: &bool, src: CustomSrc, ctx: &mut SpCtx) -> Result<T, SpError>
     #[darling(default)]
     pub reader: Option<String>,
     
@@ -82,11 +82,11 @@ pub(crate) struct FieldAttributes {
     /// For example :
     ///     struct MyStruct {
     ///         some_field: bool,
-    ///         #[sp(writer="custom_writer, some_field")]
+    ///         #[sp(writer="custom_writer")]
     ///         optionnal: Option<usize>,
     ///     }
     /// Will end up generating code that calls a function with signature :
-    ///     fn custom_writer(some_field: &bool, is_output_le:bool, prepend_count: bool, dst: &mut Write) -> Result<usize, SpError>
+    ///     fn custom_writer(this: &Option<usize>, ctx: &mut SpCtx, dst: &mut Write) -> Result<usize, SpError>
     #[darling(default)]
     pub writer: Option<String>,
 
