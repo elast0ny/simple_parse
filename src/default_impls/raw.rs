@@ -47,12 +47,12 @@ macro_rules! impl_primitive {
 
 /// Returns a slice of primitive types from a Cursor<[u8]>
 macro_rules! mutslice_from_cursor {
-    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
         // Dont use checked_bytes if count is provided
-        let count: usize = match $count {
+        let count: usize = match $ctx.count {
             Some(c) => c,
             None => {
-                <DefaultCountType>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?
+                <DefaultCountType>::$unchecked_reader($checked_bytes, $src, $ctx)?
                     as _
             }
         };
@@ -66,6 +66,8 @@ macro_rules! mutslice_from_cursor {
         {
             return Err(SpError::BadAlignment);
         }
+
+        $ctx.cursor += count * <$as_typ>::STATIC_SIZE;
 
         // Return slice from pointer
         Ok(std::slice::from_raw_parts_mut(
@@ -105,9 +107,9 @@ impl_primitive_noref!(AtomicBool as bool, atomic_from_ptr);
 
 // Converts a raw pointer to a NonZero reference validating the contents
 macro_rules! nonzeroref_from_ptr {
-    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
         // First get ref to primitive type
-        let prim_ref = <&$as_typ>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
+        let prim_ref = <&$as_typ>::$unchecked_reader($checked_bytes, $src, $ctx)?;
 
         // Make sure the &NonZero is not 0
         if *prim_ref == 0 {
@@ -120,9 +122,9 @@ macro_rules! nonzeroref_from_ptr {
 
 // Converts a raw pointer to a slice of NonZero validating the contents
 macro_rules! nonzeroslice_from_ptr {
-    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
         // First get ref to primitive type
-        let prim_slice = <&[$as_typ]>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
+        let prim_slice = <&[$as_typ]>::$unchecked_reader($checked_bytes, $src, $ctx)?;
 
         // Make sure the &NonZero is not 0
         for v in prim_slice.iter() {
@@ -158,9 +160,9 @@ impl_primitive!(NonZeroIsize as isize, nonzero_from_ptr, nonzeroref_from_ptr, no
 
 /// Returns a &str from a Cursor<[u8]>
 macro_rules! str_from_cursor {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
         // Read as u8 slice
-        let byte_slice = <&[u8]>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
+        let byte_slice = <&[u8]>::$unchecked_reader($checked_bytes, $src, $ctx)?;
 
         // Make sure bytes are valid utf8
         match std::str::from_utf8(byte_slice) {
@@ -174,8 +176,8 @@ impl_readrawmut!(&'b str, str_from_cursor);
 
 /// Returns a String from a Cursor<[u8]>
 macro_rules! string_from_cursor {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
-        let str_ref = <&str>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
+        let str_ref = <&str>::$unchecked_reader($checked_bytes, $src, $ctx)?;
         #[cfg(feature = "verbose")]
         crate::debug!("&str.to_string({} bytes)", str_ref.as_bytes().len());
         Ok(str_ref.to_string())
@@ -186,11 +188,10 @@ impl_readrawmut!(String, string_from_cursor);
 
 /// Returns a &CStr from a Cursor<[u8]>
 macro_rules! cstr_from_cursor {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
-        let _ = $is_input_le;
-        let _ = $count;
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
 
         if *$checked_bytes == 0 {
+            $ctx.cursor += 1;
             let s = std::slice::from_raw_parts($checked_bytes, 1);
             return Ok(CStr::from_bytes_with_nul_unchecked(s));
         }
@@ -199,6 +200,7 @@ macro_rules! cstr_from_cursor {
         let bytes_left: u64 = $src.get_ref().len() as u64 - $src.position();
 
         while num_bytes < bytes_left {
+            $ctx.cursor += 1;
             #[cfg(feature = "verbose")]
             crate::debug!(
                 "Check src.len({}) < 1",
@@ -221,8 +223,8 @@ impl_readrawmut!(&'b CStr, cstr_from_cursor);
 
 /// Returns a CString from a Cursor<[u8]>
 macro_rules! cstring_from_cursor {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
-        let str_ref = <&CStr>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
+        let str_ref = <&CStr>::$unchecked_reader($checked_bytes, $src, $ctx)?;
         let cstr_bytes = str_ref.to_bytes();
         #[cfg(feature = "verbose")]
         crate::debug!("CStr.clone({} bytes)", cstr_bytes.len());
@@ -236,17 +238,18 @@ impl_readrawmut!(CString, cstring_from_cursor);
 
 /// Returns an Option<T> from a Cursor<[u8]>
 macro_rules! option_from_cursor {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt) => {{
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt) => {{
         // Dont use checked_bytes if count is provided
-        let is_some: bool = match $count {
+        let is_some: bool = match $ctx.count {
             Some(c) => c != 0,
-            None => <bool>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?,
+            None => <bool>::$unchecked_reader($checked_bytes, $src, $ctx)?,
         };
+        $ctx.count = None;
 
         Ok(if !is_some {
             None
         } else {
-            Some(<$generic>::$reader($src, $is_input_le, $count)?)
+            Some(<$generic>::$reader($src, $ctx)?)
         })
     }};
 }
@@ -256,33 +259,32 @@ impl_readrawmut!(Option<T>, option_from_cursor, T);
 /// Generates code for populating generic types
 #[macro_use]
 macro_rules! generic_from_cursor {
-    ($alloc_call:ident, $add_call:ident, $typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt $(: $bound:ident $(+ $other:ident)*)? $(, $generics:tt $(: $bounds:ident $(+ $others:ident)*)?)*) => {{
+    ($alloc_call:ident, $add_call:ident, $typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)? $(, $generics:tt $(: $bounds:ident $(+ $others:ident)*)?)*) => {{
 
-        let count: usize = match $count {
+        let count: usize = match $ctx.count {
             Some(c) => c,
             None => {
-                <DefaultCountType>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)? as _
+                <DefaultCountType>::$unchecked_reader($checked_bytes, $src, $ctx)? as _
             }
         };
 
         let mut res;
-
+        $ctx.count = None;
         if !<$generic>::IS_VAR_SIZE $( && !<$generics>::IS_VAR_SIZE)* {
             // Every item has the same size, we can validate...
             let item_size = <$generic>::STATIC_SIZE $( + !<$generics>::STATIC_SIZE)*;
             let mut items_ptr = validate_cursor(count * item_size, $src)?;
             //...and preallocate
             res = $alloc_call!(count);
-
             for _i in 0..count {
                 res.$add_call(
                 {
-                    let v = <$generic>::$unchecked_reader(items_ptr, $src, $is_input_le, None)?;
+                    let v = <$generic>::$unchecked_reader(items_ptr, $src, $ctx)?;
                     items_ptr = items_ptr.add(<$generic>::STATIC_SIZE);
                     v
                 }
                 $(,{
-                    let v = <$generics>::$unchecked_reader(items_ptr, $src, $is_input_le, None)?;
+                    let v = <$generics>::$unchecked_reader(items_ptr, $src, $ctx)?;
                     items_ptr = items_ptr.add(<$generics>::STATIC_SIZE);
                     v
                 })*
@@ -293,8 +295,8 @@ macro_rules! generic_from_cursor {
             // Slow path, every item may have a different size
             for _i in 0..count {
                 res.$add_call(
-                    <$generic>::$reader($src, $is_input_le, None)?
-                    $(,<$generics>::$reader($src, $is_input_le, None)?)*
+                    <$generic>::$reader($src, $ctx)?
+                    $(,<$generics>::$reader($src, $ctx)?)*
                 );
             }
         }
@@ -305,8 +307,8 @@ macro_rules! generic_from_cursor {
 
 /// Returns a Vec<T> from a Cursor<[u8]>
 macro_rules! vec_from_cursor {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
-        generic_from_cursor!(new_with_capacity, push, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
+        generic_from_cursor!(new_with_capacity, push, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic $(: $bound $(+ $other)*)?)
     };
 }
 impl_readraw!(Vec<T>, vec_from_cursor, T);
@@ -314,8 +316,8 @@ impl_readrawmut!(Vec<T>, vec_from_cursor, T);
 
 /// Returns a VecDeque<T> from a Cursor<[u8]>
 macro_rules! vecdeque_from_cursor {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
-        generic_from_cursor!(new_with_capacity, push_back, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
+        generic_from_cursor!(new_with_capacity, push_back, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic $(: $bound $(+ $other)*)?)
     };
 }
 impl_readraw!(VecDeque<T>, vecdeque_from_cursor, T);
@@ -323,8 +325,8 @@ impl_readrawmut!(VecDeque<T>, vecdeque_from_cursor, T);
 
 /// Returns a LinkedList<T> from a Cursor<[u8]>
 macro_rules! linkedlist_from_cursor {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
-        generic_from_cursor!(new_empty, push_back, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
+        generic_from_cursor!(new_empty, push_back, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic $(: $bound $(+ $other)*)?)
     };
 }
 impl_readraw!(LinkedList<T>, linkedlist_from_cursor, T);
@@ -332,8 +334,8 @@ impl_readrawmut!(LinkedList<T>, linkedlist_from_cursor, T);
 
 /// Returns a HashSet<K> from a Cursor<[u8]>
 macro_rules! hashset_from_cursor {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
-        generic_from_cursor!(new_with_capacity, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
+        generic_from_cursor!(new_with_capacity, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic $(: $bound $(+ $other)*)?)
     };
 }
 impl_readraw!(HashSet<K>, hashset_from_cursor, K: Eq + Hash);
@@ -341,8 +343,8 @@ impl_readrawmut!(HashSet<K>, hashset_from_cursor, K: Eq + Hash);
 
 /// Returns a BTreeSet<K> from a Cursor<[u8]>
 macro_rules! btreeset_from_cursor {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
-        generic_from_cursor!(new_empty, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
+        generic_from_cursor!(new_empty, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic $(: $bound $(+ $other)*)?)
     };
 }
 impl_readraw!(BTreeSet<K>, btreeset_from_cursor, K: Ord);
@@ -350,8 +352,8 @@ impl_readrawmut!(BTreeSet<K>, btreeset_from_cursor, K: Ord);
 
 /// Returns a HashMap<K, V> from a Cursor<[u8]>
 macro_rules! hashmap_from_cursor {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic1:tt $(: $bound1:ident $(+ $other1:ident)*)?, $generic2:tt $(: $bound2:ident $(+ $other2:ident)*)?) => {
-        generic_from_cursor!(new_with_capacity, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic1 $(: $bound1 $(+ $other1)*)?, $generic2 $(: $bound2 $(+ $other2)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic1:tt $(: $bound1:ident $(+ $other1:ident)*)?, $generic2:tt $(: $bound2:ident $(+ $other2:ident)*)?) => {
+        generic_from_cursor!(new_with_capacity, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic1 $(: $bound1 $(+ $other1)*)?, $generic2 $(: $bound2 $(+ $other2)*)?)
     };
 }
 impl_readraw!(HashMap<K,V>, hashmap_from_cursor, K: Eq + Hash, V);
@@ -359,8 +361,8 @@ impl_readrawmut!(HashMap<K,V>, hashmap_from_cursor, K: Eq + Hash, V);
 
 /// Returns a BTreeMap<K, V> from a Cursor<[u8]>
 macro_rules! btreemap_from_cursor {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic1:tt $(: $bound1:ident $(+ $other1:ident)*)?, $generic2:tt $(: $bound2:ident $(+ $other2:ident)*)?) => {
-        generic_from_cursor!(new_empty, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic1 $(: $bound1 $(+ $other1)*)?, $generic2 $(: $bound2 $(+ $other2)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic1:tt $(: $bound1:ident $(+ $other1:ident)*)?, $generic2:tt $(: $bound2:ident $(+ $other2:ident)*)?) => {
+        generic_from_cursor!(new_empty, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic1 $(: $bound1 $(+ $other1)*)?, $generic2 $(: $bound2 $(+ $other2)*)?)
     };
 }
 impl_readraw!(BTreeMap<K,V>, btreemap_from_cursor, K: Ord, V);

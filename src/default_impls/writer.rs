@@ -51,20 +51,20 @@ impl_writer_all!(NonZeroIsize as isize, prim_to_writer);
 /* String types */
 
 macro_rules! asbytes_to_writer {
-    ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
+    ($self:ident, $ctx:ident, $dst: ident) => {{
         // Convert to &[u8]
         let s = $self.as_bytes();
-        s.inner_to_writer($is_output_le, $prepend_count, $dst)
+        s.inner_to_writer($ctx, $dst)
     }};
 }
 impl_writer!(&str, asbytes_to_writer);
 impl_writer!(String, asbytes_to_writer);
 
 macro_rules! tobytes_to_writer {
-    ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
+    ($self:ident, $ctx:ident, $dst: ident) => {{
         // Convert to &[u8]
         let s = $self.to_bytes_with_nul();
-        s.inner_to_writer($is_output_le, $prepend_count, $dst)
+        s.inner_to_writer($ctx, $dst)
     }};
 }
 impl_writer!(&CStr, tobytes_to_writer);
@@ -73,18 +73,20 @@ impl_writer!(CString, tobytes_to_writer);
 /* Generic types */
 
 macro_rules! option_to_writer {
-    ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident $(, $generics:tt $(: $bound:ident $(+ $other:ident)*)?)*) => {{
+    ($self:ident, $ctx:ident, $dst: ident $(, $generics:tt $(: $bound:ident $(+ $other:ident)*)?)*) => {{
         let mut total_sz: usize = 0;
         match $self {
             Some(v) => {
-                if $prepend_count {
-                    total_sz += (true).inner_to_writer($is_output_le, $prepend_count, $dst)?;
+                if $ctx.count.is_none() {
+                    total_sz += (true).inner_to_writer($ctx, $dst)?;
+                } else {
+                    $ctx.count = None;
                 }
-                total_sz += v.inner_to_writer($is_output_le, $prepend_count, $dst)?;
+                total_sz += v.inner_to_writer($ctx, $dst)?;
             }
             None => {
-                if $prepend_count {
-                    total_sz += (false).inner_to_writer($is_output_le, $prepend_count, $dst)?;
+                if $ctx.count.is_none() {
+                    total_sz += (false).inner_to_writer($ctx, $dst)?;
                 }
             }
         }

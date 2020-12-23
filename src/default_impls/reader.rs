@@ -53,8 +53,8 @@ impl_read!(NonZeroIsize as isize, nonzero_from_ptr);
 /* String types */
 
 macro_rules! string_from_reader {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
-        let bytes = <Vec<u8>>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
+        let bytes = <Vec<u8>>::$unchecked_reader($checked_bytes, $src, $ctx)?;
         match String::from_utf8(bytes) {
             Ok(s) => Ok(s),
             Err(_e) => Err(SpError::InvalidBytes),
@@ -64,20 +64,20 @@ macro_rules! string_from_reader {
 impl_read!(String, string_from_reader);
 
 macro_rules! cstring_from_reader {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
-        let _ = $is_input_le;
-        let _ = $count;
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
         let mut bytes = Vec::new();
 
         // CString::from_vec_unchecked adds the null terminator
 
         if *$checked_bytes == 0 {
+            $ctx.cursor += 1;
             return Ok(CString::from_vec_unchecked(bytes));
         }
 
         // Read one byte at a time adding them to bytes until we hit a null terminator
         let mut dst = [0u8];
         while let Ok(()) = validate_reader_exact(&mut dst, $src) {
+            $ctx.cursor += 1;
             if dst[0] == 0x00 {
                 break;
             }
@@ -93,12 +93,13 @@ impl_read!(CString, cstring_from_reader);
 
 /// Returns an Option<T> from a Reader
 macro_rules! option_from_reader {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt) => {{
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt) => {{
         // Dont use checked_bytes if count is provided
-        let is_some: bool = match $count {
+        let is_some: bool = match $ctx.count {
             Some(c) => c != 0,
-            None => <bool>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?,
+            None => <bool>::$unchecked_reader($checked_bytes, $src, $ctx)?,
         };
+        $ctx.count = None;
 
         Ok(if !is_some {
             #[cfg(feature = "verbose")]
@@ -109,7 +110,7 @@ macro_rules! option_from_reader {
             #[cfg(feature = "verbose")]
             crate::debug!("Some({})", stringify!($generic));
 
-            Some(<$generic>::$reader($src, $is_input_le, $count)?)
+            Some(<$generic>::$reader($src, $ctx)?)
         })
     }};
 }
@@ -118,12 +119,12 @@ impl_read!(Option<T>, <bool>::STATIC_SIZE, option_from_reader, T);
 /// Generates code for populating generic types
 #[macro_use]
 macro_rules! generic_from_reader {
-    ($alloc_call:ident, $add_call:ident, $typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt $(: $bound:ident $(+ $other:ident)*)? $(, $generics:tt $(: $bounds:ident $(+ $others:ident)*)?)*) => {{
+    ($alloc_call:ident, $add_call:ident, $typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)? $(, $generics:tt $(: $bounds:ident $(+ $others:ident)*)?)*) => {{
 
-        let count: usize = match $count {
+        let count: usize = match $ctx.count {
             Some(c) => c,
             None => {
-                <DefaultCountType>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)? as _
+                <DefaultCountType>::$unchecked_reader($checked_bytes, $src, $ctx)? as _
             }
         };
 
@@ -132,7 +133,7 @@ macro_rules! generic_from_reader {
         }
 
         let mut res;
-
+        $ctx.count = None;
         if !<$generic>::IS_VAR_SIZE $( && !<$generics>::IS_VAR_SIZE)* {
             let mut dst = Vec::new();
             // Every item has the same size, we can validate...
@@ -145,12 +146,12 @@ macro_rules! generic_from_reader {
             for _i in 0..count {
                 res.$add_call(
                 {
-                    let v = <$generic>::$unchecked_reader(items_ptr, $src, $is_input_le, None)?;
+                    let v = <$generic>::$unchecked_reader(items_ptr, $src, $ctx)?;
                     items_ptr = items_ptr.add(<$generic>::STATIC_SIZE);
                     v
                 }
                 $(,{
-                    let v = <$generics>::$unchecked_reader(items_ptr, $src, $is_input_le, None)?;
+                    let v = <$generics>::$unchecked_reader(items_ptr, $src, $ctx)?;
                     items_ptr = items_ptr.add(<$generics>::STATIC_SIZE);
                     v
                 })*
@@ -161,8 +162,8 @@ macro_rules! generic_from_reader {
             // Slow path, every item may have a different size
             for _i in 0..count {
                 res.$add_call(
-                    <$generic>::$reader($src, $is_input_le, None)?
-                    $(,<$generics>::$reader($src, $is_input_le, None)?)*
+                    <$generic>::$reader($src, $ctx)?
+                    $(,<$generics>::$reader($src, $ctx)?)*
                 );
             }
         }
@@ -173,16 +174,16 @@ macro_rules! generic_from_reader {
 
 /// Returns a Vec<T> from a Reader
 macro_rules! vec_from_reader {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
-        generic_from_reader!(new_with_capacity, push, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
+        generic_from_reader!(new_with_capacity, push, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic $(: $bound $(+ $other)*)?)
     };
 }
 impl_read!(Vec<T>, <DefaultCountType>::STATIC_SIZE, vec_from_reader, T);
 
 /// Returns a VecDeque<T> from a Reader
 macro_rules! vecdeque_from_reader {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
-        generic_from_reader!(new_with_capacity, push_back, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
+        generic_from_reader!(new_with_capacity, push_back, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic $(: $bound $(+ $other)*)?)
     };
 }
 impl_read!(
@@ -194,8 +195,8 @@ impl_read!(
 
 /// Returns a LinkedList<T> from a Reader
 macro_rules! linkedlist_from_reader {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
-        generic_from_reader!(new_empty, push_back, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
+        generic_from_reader!(new_empty, push_back, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic $(: $bound $(+ $other)*)?)
     };
 }
 impl_read!(
@@ -207,8 +208,8 @@ impl_read!(
 
 /// Returns a HashSet<K> from a Reader
 macro_rules! hashset_from_reader {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
-        generic_from_reader!(new_with_capacity, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
+        generic_from_reader!(new_with_capacity, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic $(: $bound $(+ $other)*)?)
     };
 }
 impl_read!(
@@ -220,8 +221,8 @@ impl_read!(
 
 /// Returns a BTreeSet<K> from a Reader
 macro_rules! btreeset_from_reader {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
-        generic_from_reader!(new_empty, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic $(: $bound $(+ $other)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)?) => {
+        generic_from_reader!(new_empty, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic $(: $bound $(+ $other)*)?)
     };
 }
 impl_read!(
@@ -233,16 +234,16 @@ impl_read!(
 
 /// Returns a HashMap<K, V> from a Reader
 macro_rules! hashmap_from_reader {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic1:tt $(: $bound1:ident $(+ $other1:ident)*)?, $generic2:tt $(: $bound2:ident $(+ $other2:ident)*)?) => {
-        generic_from_reader!(new_with_capacity, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic1 $(: $bound1 $(+ $other1)*)?, $generic2 $(: $bound2 $(+ $other2)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic1:tt $(: $bound1:ident $(+ $other1:ident)*)?, $generic2:tt $(: $bound2:ident $(+ $other2:ident)*)?) => {
+        generic_from_reader!(new_with_capacity, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic1 $(: $bound1 $(+ $other1)*)?, $generic2 $(: $bound2 $(+ $other2)*)?)
     };
 }
 impl_read!(HashMap<K,V>, <DefaultCountType>::STATIC_SIZE, hashmap_from_reader, K: Eq + Hash, V);
 
 /// Returns a BTreeMap<K, V> from a Reader
 macro_rules! btreemap_from_reader {
-    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr, $generic1:tt $(: $bound1:ident $(+ $other1:ident)*)?, $generic2:tt $(: $bound2:ident $(+ $other2:ident)*)?) => {
-        generic_from_reader!(new_empty, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $is_input_le, $count, $generic1 $(: $bound1 $(+ $other1)*)?, $generic2 $(: $bound2 $(+ $other2)*)?)
+    ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident, $generic1:tt $(: $bound1:ident $(+ $other1:ident)*)?, $generic2:tt $(: $bound2:ident $(+ $other2:ident)*)?) => {
+        generic_from_reader!(new_empty, insert, $typ, $reader, $unchecked_reader, $checked_bytes, $src, $ctx, $generic1 $(: $bound1 $(+ $other1)*)?, $generic2 $(: $bound2 $(+ $other2)*)?)
     };
 }
 impl_read!(BTreeMap<K,V>, <DefaultCountType>::STATIC_SIZE, btreemap_from_reader, K: Ord, V);

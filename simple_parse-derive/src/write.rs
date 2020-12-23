@@ -28,12 +28,11 @@ pub fn generate(input: &mut DeriveInput) -> TokenStream {
     let res = quote! {
         impl #impl_generics ::simple_parse::SpWrite for #name #ty_generics #where_clause {
             fn to_writer<W: std::io::Write + ?Sized>(&self, dst: &mut W) -> std::result::Result<usize, ::simple_parse::SpError> {
-                self.inner_to_writer(true, true, dst)
+                self.inner_to_writer(&mut ::simple_parse::SpCtx::default(), dst)
             }
             fn inner_to_writer<W: std::io::Write + ?Sized>(
                 &self,
-                is_output_le: bool,
-                prepend_count: bool,
+                ctx: &mut ::simple_parse::SpCtx,
                 dst: &mut W,
             ) -> std::result::Result<usize, ::simple_parse::SpError>
             {
@@ -104,7 +103,12 @@ fn generate_fields_write(
             Some(ref e) => is_lower_endian(e),
         };
 
-        let prepend_count = field_attrs.count.is_none();
+        let count_value = if field_attrs.count.is_none() {
+            quote!{None}
+        } else {
+            // TODO : put the actual value of the count field in question
+            quote!{Some(0)}
+        };
 
         // If this field is a count field, write the len instead
         if let Some(ref ident) = count_fields.get(&field_ident.to_string()) {
@@ -116,12 +120,14 @@ fn generate_fields_write(
                 quote!{#t}
             };
             
+            // TODO : Add special case so we dont call .len() on Option
             write_code.extend(quote! {
                 let _f: #ftype = match #ident.len().try_into() {
                     Ok(v) => v,
                     Err(e) => return Err(::simple_parse::SpError::CountFieldOverflow),
                 };
-                written_len += _f.inner_to_writer(#is_output_le, true, dst)?;
+                ctx.is_little_endian = #is_output_le;
+                written_len += _f.inner_to_writer(ctx, dst)?;
             });
             continue;
         }
@@ -136,18 +142,20 @@ fn generate_fields_write(
                     }
                 };
                 quote!{
-                    #fn_name(&#field_ident, #dependent_fields #is_output_le, #prepend_count, dst)
+                    #fn_name(&#field_ident, #dependent_fields ctx, dst)
                 }
             }
             None => {
                 quote! {
-                    #field_ident.inner_to_writer(#is_output_le, #prepend_count, dst)
+                    #field_ident.inner_to_writer(ctx, dst)
                 }
             }
         };
 
         // Add the generated code for this field
         write_code.extend(quote! {
+            ctx.is_little_endian = #is_output_le;
+            ctx.count = #count_value;
             written_len += #write_call?;
         })
     }
@@ -206,7 +214,8 @@ fn generate_enum_write(input: &DeriveInput, data: &DataEnum, attrs: EnumAttribut
         variant_code_gen.extend(quote! {
             #name::#variant_name#field_list => {
                 let mut var_id: #id_type = #variant_id;
-                written_len += var_id.inner_to_writer(#default_is_le, true, dst)?;
+                ctx.is_little_endian = #default_is_le;
+                written_len += var_id.inner_to_writer(ctx, dst)?;
                 #write_code
             },
         });

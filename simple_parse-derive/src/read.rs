@@ -4,19 +4,23 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{parse_quote, Data, DataEnum, DeriveInput, Fields};
 
-fn generate_validate_size_code(static_size: &TokenStream, reader_type: &ReaderType) -> TokenStream {
+fn generate_validate_size_code(static_size: &TokenStream, reader_type: &ReaderType) -> (TokenStream, TokenStream) {
     match reader_type {
         ReaderType::Reader => {
+            (quote! {
+                let mut tmp_stack;
+            },
             quote! {
-                tmp = [0u8; #static_size];            
-                ::simple_parse::validate_reader_exact(&mut tmp, src)?;
-                checked_bytes = tmp.as_mut_ptr();
-            }
+                tmp_stack = [0u8; #static_size];
+                ::simple_parse::validate_reader_exact(&mut tmp_stack, src)?;
+                checked_bytes = tmp_stack.as_mut_ptr();
+            })
         },
         _ => {
+            (TokenStream::new(),
             quote! {
                 checked_bytes = ::simple_parse::validate_cursor(#static_size, src)?;
-            }
+            })
         }
     }
 }
@@ -75,7 +79,7 @@ pub(crate) fn generate(
     //      We could check whether the type has generics and instead of using STATIC_SIZE
     //      directly, we can call opt_hint.rs' generate functions to use the same expresion
     //      as it generated for the Self::STATIC_SIZE...
-    let static_validation_code =
+    let (stack_var, static_validation_code) =
         generate_validate_size_code(&quote! {<#name as ::simple_parse::SpOptHints>::STATIC_SIZE}, &reader_type);
 
     // Generate impl block for TYPE and &TYPE
@@ -85,25 +89,23 @@ pub(crate) fn generate(
             impl ::simple_parse::SpRead for #name #ty_generics #where_clause {
                 fn inner_from_reader<R: std::io::Read + ?Sized>(
                     src: &mut R,
-                    is_input_le: bool,
-                    count: Option<usize>,
+                    ctx: &mut ::simple_parse::SpCtx,
                 ) -> std::result::Result<Self, ::simple_parse::SpError>
                 where
                     Self: Sized
                 {
                     #log_call
                     let mut checked_bytes: *mut u8 = std::ptr::null_mut();
-                    let mut tmp;
+                    #stack_var
                     #static_validation_code
                     unsafe {
-                        Self::inner_from_reader_unchecked(checked_bytes, src, is_input_le, count)
+                        Self::inner_from_reader_unchecked(checked_bytes, src, ctx)
                     }
                 }
                 unsafe fn inner_from_reader_unchecked<R: std::io::Read + ?Sized>(
                     mut checked_bytes: *mut u8,
                     src: &mut R,
-                    is_input_le: bool,
-                    count: Option<usize>,
+                    ctx: &mut ::simple_parse::SpCtx,
                 ) -> Result<Self, ::simple_parse::SpError>
                 where
                     Self: Sized + ::simple_parse::SpOptHints {
@@ -124,25 +126,24 @@ pub(crate) fn generate(
                 impl #ty_generics ::simple_parse::SpReadRaw<#lifetime> for #name #ty_generics #where_clause {
                     fn inner_from_slice(
                         src: &mut std::io::Cursor<&#lifetime [u8]>,
-                        is_input_le: bool,
-                        count: Option<usize>,
+                        ctx: &mut ::simple_parse::SpCtx,
                     ) -> std::result::Result<Self, ::simple_parse::SpError>
                     where
                         Self: Sized,
                     {
                         #log_call
                         let mut checked_bytes: *mut u8 = std::ptr::null_mut();
+                        #stack_var
                         #static_validation_code
                         unsafe {
-                            Self::inner_from_slice_unchecked(checked_bytes, src, is_input_le, count)
+                            Self::inner_from_slice_unchecked(checked_bytes, src, ctx)
                         }
                     }
 
                     unsafe fn inner_from_slice_unchecked(
                         mut checked_bytes: *const u8,
                         src: &mut std::io::Cursor<&#lifetime [u8]>,
-                        is_input_le: bool,
-                        count: Option<usize>,
+                        ctx: &mut ::simple_parse::SpCtx,
                     ) -> Result<Self, ::simple_parse::SpError>
                     where
                         Self: Sized + ::simple_parse::SpOptHints {
@@ -164,25 +165,24 @@ pub(crate) fn generate(
                 impl #ty_generics ::simple_parse::SpReadRawMut<#lifetime> for #name #ty_generics #where_clause {
                     fn inner_from_mut_slice(
                         src: &mut std::io::Cursor<&#lifetime mut [u8]>,
-                        is_input_le: bool,
-                        count: Option<usize>,
+                        ctx: &mut ::simple_parse::SpCtx,
                     ) -> std::result::Result<Self, ::simple_parse::SpError>
                     where
                         Self: Sized,
                     {
                         #log_call
                         let mut checked_bytes: *mut u8 = std::ptr::null_mut();
+                        #stack_var
                         #static_validation_code
                         unsafe {
-                            Self::inner_from_slice_unchecked(checked_bytes, src, is_input_le, count)
+                            Self::inner_from_slice_unchecked(checked_bytes, src, ctx)
                         }
                     }
 
                     unsafe fn inner_from_mut_slice_unchecked(
                         mut checked_bytes: *mut u8,
                         src: &mut std::io::Cursor<&#lifetime mut [u8]>,
-                        is_input_le: bool,
-                        count: Option<usize>,
+                        ctx: &mut ::simple_parse::SpCtx,
                     ) -> Result<Self, ::simple_parse::SpError>
                     where
                         Self: Sized + ::simple_parse::SpOptHints {
@@ -293,28 +293,30 @@ fn generate_fields_read(
                     }
                 };
                 quote!{
-                    #fn_name(#dependent_fields src, #is_input_le, #count_field)
+                    #fn_name(#dependent_fields src, ctx)
                 }
             }
             None => {
                 // Call regular function
                 let fn_name = get_parse_fn_name(&reader_type, true);
                 quote! {
-                    <#field_type>::#fn_name(checked_bytes, src, #is_input_le, #count_field)
+                    <#field_type>::#fn_name(checked_bytes, src, ctx)
                 }
             }
         };
 
         queued_read_code.extend(quote! {
+            ctx.is_little_endian = #is_input_le;
+            ctx.count = #count_field;
             let #field_name: #field_type = #read_call?;
         });
 
         if is_var_type || idx + 1 == num_fields {
             if hit_first_dyn && num_summed_sizes > 0 {
-                let validate_static_size =
+                let (stack_var, validate_static_size) =
                     generate_validate_size_code(&quote! {#static_size_code}, &reader_type);
                 read_code.extend(quote! {
-                    let mut tmp;
+                    #stack_var
                     #validate_static_size
                 });
 
@@ -386,10 +388,10 @@ fn generate_enum_read(
 
             let res = opt_hints::generate_struct_hints(&variant.fields);
             let fields_size = res.static_size;
-            let validate_field_size = generate_validate_size_code(&quote!{#fields_size}, reader_type);
+            let (stack_var, validate_field_size) = generate_validate_size_code(&quote!{#fields_size}, reader_type);
             (
                 quote!{
-                    let mut tmp;
+                    #stack_var
                     if <Self as ::simple_parse::SpOptHints>::STATIC_SIZE == <#id_type as ::simple_parse::SpOptHints>::STATIC_SIZE {
                         #validate_field_size
                     }
@@ -428,7 +430,9 @@ fn generate_enum_read(
 
     (
         quote! {
-            let variant_id = <#id_type>::#fn_name(checked_bytes, src, #default_is_le, None)?;
+            ctx.is_little_endian = #default_is_le;
+            ctx.count = None;
+            let variant_id = <#id_type>::#fn_name(checked_bytes, src, ctx)?;
             checked_bytes = checked_bytes.add(<#id_type as ::simple_parse::SpOptHints>::STATIC_SIZE);
             let res = match variant_id {
                 #variant_read_code

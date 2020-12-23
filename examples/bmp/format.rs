@@ -1,4 +1,4 @@
-use simple_parse::{SpRead, SpWrite, SpError, validate_reader_exact};
+use simple_parse::{SpRead, SpWrite, SpError, SpCtx, validate_reader_exact};
 use std::io::{Read, Write};
 
 #[derive(Debug, SpRead, SpWrite)]
@@ -62,7 +62,7 @@ pub enum BitmapCompression {
 }
 impl BitmapCompression {
     // Custom SpRead parser based on the compression value
-    fn read<R: Read + ?Sized>(compression_bitmask: &u32, src: &mut R, is_input_le: bool, count: Option<usize>) -> Result<Self, SpError> {
+    fn read<R: Read + ?Sized>(compression_bitmask: &u32, src: &mut R, ctx: &mut SpCtx) -> Result<Self, SpError> {
         const BI_RGB: u32 = 0;
         const BI_BITFIELDS : u32 = 3;
         const BI_ALPHABITFIELDS: u32 = 6;
@@ -73,9 +73,9 @@ impl BitmapCompression {
             },
             BI_BITFIELDS => {
                 // Call read() for every u32
-                let red = u32::inner_from_reader(src, is_input_le, count)?;
-                let green = u32::inner_from_reader(src, is_input_le, count)?;
-                let blue = u32::inner_from_reader(src, is_input_le, count)?;
+                let red = u32::inner_from_reader(src, ctx)?;
+                let green = u32::inner_from_reader(src, ctx)?;
+                let blue = u32::inner_from_reader(src, ctx)?;
                 Ok(Self::BitFields{red, green, blue})
             },
             BI_ALPHABITFIELDS => {
@@ -89,13 +89,13 @@ impl BitmapCompression {
                 let blue: u32;
                 // Use unchecked versions to consume the pre-validated 16 bytes
                 unsafe {
-                    alpha = u32::inner_from_reader_unchecked(checked_bytes, src, is_input_le, count)?;
+                    alpha = u32::inner_from_reader_unchecked(checked_bytes, src, ctx)?;
                     checked_bytes = checked_bytes.add(4);
-                    red = u32::inner_from_reader_unchecked(checked_bytes, src, is_input_le, count)?;
+                    red = u32::inner_from_reader_unchecked(checked_bytes, src, ctx)?;
                     checked_bytes = checked_bytes.add(4);
-                    green = u32::inner_from_reader_unchecked(checked_bytes, src, is_input_le, count)?;
+                    green = u32::inner_from_reader_unchecked(checked_bytes, src, ctx)?;
                     checked_bytes = checked_bytes.add(4);
-                    blue = u32::inner_from_reader_unchecked(checked_bytes, src, is_input_le, count)?;
+                    blue = u32::inner_from_reader_unchecked(checked_bytes, src, ctx)?;
                 }
                 Ok(Self::AlphaBitFields{alpha,red, green, blue})
             },
@@ -103,20 +103,20 @@ impl BitmapCompression {
         }
     }
     // Custom SpWrite
-    fn write<W: Write + ?Sized>(this: &BitmapCompression, is_output_le: bool, prepend_count: bool, dst: &mut W) -> Result<usize, SpError> {
+    fn write<W: Write + ?Sized>(this: &BitmapCompression, ctx: &mut SpCtx, dst: &mut W) -> Result<usize, SpError> {
         match this {
             &Self::None => Ok(0),
             &Self::AlphaBitFields{alpha, red, green, blue} => {
-                alpha.inner_to_writer(is_output_le, prepend_count, dst)?;
-                red.inner_to_writer(is_output_le, prepend_count, dst)?;
-                green.inner_to_writer(is_output_le, prepend_count, dst)?;
-                blue.inner_to_writer(is_output_le, prepend_count, dst)?;
+                alpha.inner_to_writer(ctx, dst)?;
+                red.inner_to_writer(ctx, dst)?;
+                green.inner_to_writer(ctx, dst)?;
+                blue.inner_to_writer(ctx, dst)?;
                 Ok(16)
             },
             &Self::BitFields{red, green, blue} => {
-                red.inner_to_writer(is_output_le, prepend_count, dst)?;
-                green.inner_to_writer(is_output_le, prepend_count, dst)?;
-                blue.inner_to_writer(is_output_le, prepend_count, dst)?;
+                red.inner_to_writer(ctx, dst)?;
+                green.inner_to_writer(ctx, dst)?;
+                blue.inner_to_writer(ctx, dst)?;
                 Ok(12)
             },
         }
@@ -133,7 +133,7 @@ pub struct RgbQuad {
 }
 
 /// Parses a BMP color table based on header values
-fn parse_color_table<R: Read + ?Sized>(clr_used: &u32, compression: &BitmapCompression, bit_count: &u16, src: &mut R, is_input_le: bool, count: Option<usize>) -> Result<Vec<RgbQuad>, SpError> {
+fn parse_color_table<R: Read + ?Sized>(clr_used: &u32, compression: &BitmapCompression, bit_count: &u16, src: &mut R, ctx: &mut SpCtx) -> Result<Vec<RgbQuad>, SpError> {
     // The bitmap is not compressed which means every pixel contains the actual color information.
     // The Color table is supposed to be empty
     if let BitmapCompression::None = compression {
@@ -146,7 +146,7 @@ fn parse_color_table<R: Read + ?Sized>(clr_used: &u32, compression: &BitmapCompr
         // 2 bit_count meants the must be 4 colors
         1 | 2 => {
             for _i in 0..(2u8).pow(*bit_count as _) {
-                res.push(RgbQuad::inner_from_reader(src, is_input_le, count)?);
+                res.push(RgbQuad::inner_from_reader(src, ctx)?);
             }
         },
         // 4 bit_count and up encode how many colors are used in clr_used. This value has a max of 2^bit_count
@@ -157,7 +157,7 @@ fn parse_color_table<R: Read + ?Sized>(clr_used: &u32, compression: &BitmapCompr
             }
             // Add the colors to our array
             for _i in 0..*clr_used {
-                res.push(RgbQuad::inner_from_reader(src, is_input_le, count)?);
+                res.push(RgbQuad::inner_from_reader(src, ctx)?);
             }
         },
         _ => return Err(SpError::InvalidBytes),
@@ -167,11 +167,11 @@ fn parse_color_table<R: Read + ?Sized>(clr_used: &u32, compression: &BitmapCompr
 }
 
 /// Writes BMP a color table
-fn write_color_table<W: Write + ?Sized>(table: &Vec<RgbQuad>, is_output_le: bool, prepend_count: bool, dst: &mut W) -> Result<usize, SpError> {
+fn write_color_table<W: Write + ?Sized>(table: &Vec<RgbQuad>, ctx: &mut SpCtx, dst: &mut W) -> Result<usize, SpError> {
     let mut size_written = 0;
     // extra validation could be done here to ensure clr_used and bit_count is valid for these colors
     for color in table.iter() {
-        size_written += color.inner_to_writer(is_output_le, prepend_count, dst)?;
+        size_written += color.inner_to_writer(ctx, dst)?;
     }
     Ok(size_written)
 }

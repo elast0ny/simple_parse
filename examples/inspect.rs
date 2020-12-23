@@ -131,56 +131,56 @@ LoginInfo {
 }
 [DEBUG] Read enum Message
 [DEBUG] Read(5)
-[DEBUG] [u8] = 0x0
+[DEBUG] [0x0] : 0x00 [u8]
 [DEBUG] Read variant ClientLogin
-[DEBUG] [u8] = 0x4
-[DEBUG] [u8] = 0x1
-[DEBUG] [u16] = 0xFEC0
+[DEBUG] [0x1] : 0x04 [u8]
+[DEBUG] [0x2] : 0x01 [u8]
+[DEBUG] [0x3] : 0xFEC0 [u16]
 [DEBUG] swap to native (little) endian
 [DEBUG] Read(4)
-[DEBUG] [u8] = 0x54
-[DEBUG] [u8] = 0x6F
-[DEBUG] [u8] = 0x6E
-[DEBUG] [u8] = 0x79
+[DEBUG] [0x5] : 0x54 [u8]
+[DEBUG] [0x6] : 0x6F [u8]
+[DEBUG] [0x7] : 0x6E [u8]
+[DEBUG] [0x8] : 0x79 [u8]
 [DEBUG] Read(4)
-[DEBUG] [u32] = 0x3
+[DEBUG] [0x9] : 0x00000003 [u32]
 [DEBUG] Read(3)
-[DEBUG] [u8] = 0x61
-[DEBUG] [u8] = 0x62
-[DEBUG] [u8] = 0x63
-SpRead  ClientLogin(LoginInfo { username_len: 4, is_admin: true, secret_iv: C0FE, username: "Tony", password: "abc" })
+[DEBUG] [0xD] : 0x61 [u8]
+[DEBUG] [0xE] : 0x62 [u8]
+[DEBUG] [0xF] : 0x63 [u8]
+SpRead  Message::ClientLogin(LoginInfo { username_len: 4, is_admin: true, secret_iv: C0FE, username: "Tony", password: "abc" })
 SpWrite [0, 4, 1, C0, FE, 54, 6F, 6E, 79, 3, 0, 0, 0, 61, 62, 63]
 [DEBUG] Read enum Message
 [DEBUG] Read(5)
-[DEBUG] [u8] = 0x2
+[DEBUG] [0x0] : 0x02 [u8]
 [DEBUG] Read variant Chat
-[DEBUG] [u32] = 0x5
+[DEBUG] [0x1] : 0x00000005 [u32]
 [DEBUG] Read(5)
-[DEBUG] [u8] = 0x48
-[DEBUG] [u8] = 0x65
-[DEBUG] [u8] = 0x6C
-[DEBUG] [u8] = 0x6C
-[DEBUG] [u8] = 0x6F
-SpRead  Chat("Hello")
+[DEBUG] [0x5] : 0x48 [u8]
+[DEBUG] [0x6] : 0x65 [u8]
+[DEBUG] [0x7] : 0x6C [u8]
+[DEBUG] [0x8] : 0x6C [u8]
+[DEBUG] [0x9] : 0x6F [u8]
+SpRead  Message::Chat("Hello")
 SpWrite [2, 5, 0, 0, 0, 48, 65, 6C, 6C, 6F]
 [DEBUG] Read enum Message
 [DEBUG] Read(5)
-[DEBUG] [u8] = 0x3
+[DEBUG] [0x0] : 0x03 [u8]
 [DEBUG] Read variant File
-[DEBUG] [u32] = 0x6
+[DEBUG] [0x1] : 0x00000006 [u32]
 [DEBUG] Read(6)
-[DEBUG] [u8] = 0x68
-[DEBUG] [u8] = 0x69
-[DEBUG] [u8] = 0x2E
-[DEBUG] [u8] = 0x74
-[DEBUG] [u8] = 0x78
-[DEBUG] [u8] = 0x74
+[DEBUG] [0x5] : 0x68 [u8]
+[DEBUG] [0x6] : 0x69 [u8]
+[DEBUG] [0x7] : 0x2E [u8]
+[DEBUG] [0x8] : 0x74 [u8]
+[DEBUG] [0x9] : 0x78 [u8]
+[DEBUG] [0xA] : 0x74 [u8]
 [DEBUG] Read(1)
-[DEBUG] [u8] = 0x0
+[DEBUG] [0xB] : 0x00 [u8]
 [DEBUG] None
 [DEBUG] Read(4)
-[DEBUG] [u32] = 0x0
-SpRead  File { name: "hi.txt", creation_time: None, contents: [] }
+[DEBUG] [0xC] : 0x00000000 [u32]
+SpRead  Message::File { name: "hi.txt", creation_time: None, contents: [] }
 SpWrite [3, 6, 0, 0, 0, 68, 69, 2E, 74, 78, 74, 0, 0, 0, 0, 0]
 [DEBUG] Read enum Message
 [DEBUG] Read(5)

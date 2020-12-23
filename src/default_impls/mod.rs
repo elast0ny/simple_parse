@@ -36,15 +36,14 @@ macro_rules! impl_read {
         impl<'b, $($generics : SpRead + SpOptHints $(+ $bound$(+ $other)*)*),*> SpRead for $typ {
             fn inner_from_reader<R: Read + ?Sized>(
                 src: &mut R,
-                is_input_le: bool,
-                count: Option<usize>,
+                ctx: &mut SpCtx,
             ) -> Result<Self, crate::SpError>
             where
                 Self: Sized + SpOptHints {
                 let mut tmp = [0u8; $static_size];
 
                 // Remove count size if count was provided
-                let dst = if Self::COUNT_SIZE > 0 && count.is_some() {
+                let dst = if Self::COUNT_SIZE > 0 && ctx.count.is_some() {
                     &mut tmp[..$static_size - Self::COUNT_SIZE]
                 } else {
                     &mut tmp
@@ -52,15 +51,14 @@ macro_rules! impl_read {
 
                 validate_reader_exact(dst, src)?;
                 unsafe {
-                    Self::inner_from_reader_unchecked(dst.as_mut_ptr(), src, is_input_le, count)
+                    Self::inner_from_reader_unchecked(dst.as_mut_ptr(), src, ctx)
                 }
             }
 
             unsafe fn inner_from_reader_unchecked<R: Read + ?Sized>(
                 checked_bytes: *mut u8,
                 src: &mut R,
-                is_input_le: bool,
-                count: Option<usize>,
+                ctx: &mut SpCtx,
             ) -> Result<Self, crate::SpError>
             where
                 Self: Sized + SpOptHints {
@@ -70,8 +68,7 @@ macro_rules! impl_read {
                         inner_from_reader_unchecked,
                         checked_bytes,
                         src,
-                        is_input_le,
-                        count $(, $generics $(: $bound $(+ $other)*)*)*
+                        ctx $(, $generics $(: $bound $(+ $other)*)*)*
                     )
                 }
         }
@@ -84,25 +81,23 @@ macro_rules! impl_readraw {
         impl<'b, $($generics : SpReadRaw<'b> + SpOptHints $(+ $bound$(+ $other)*)?),*> SpReadRaw<'b> for $typ {
             fn inner_from_slice(
                 src: &mut Cursor<&'b [u8]>,
-                is_input_le: bool,
-                count: Option<usize>,
+                ctx: &mut SpCtx,
             ) -> Result<Self, crate::SpError>
             where
                 Self: Sized + SpOptHints {
                     let mut static_size = Self::STATIC_SIZE;
-                    if Self::COUNT_SIZE > 0 && count.is_some() {
+                    if Self::COUNT_SIZE > 0 && ctx.count.is_some() {
                         static_size -= Self::COUNT_SIZE;
                     }
                     let checked_bytes = validate_cursor(static_size, src)?;
                     unsafe {
-                        Self::inner_from_slice_unchecked(checked_bytes, src, is_input_le, count)
+                        Self::inner_from_slice_unchecked(checked_bytes, src, ctx)
                     }
                 }
             unsafe fn inner_from_slice_unchecked(
                 checked_bytes: *const u8,
                 src: &mut Cursor<&'b [u8]>,
-                is_input_le: bool,
-                count: Option<usize>,
+                ctx: &mut SpCtx,
             ) -> Result<Self, crate::SpError>
             where
                 Self: Sized + SpOptHints {
@@ -112,8 +107,7 @@ macro_rules! impl_readraw {
                         inner_from_slice_unchecked,
                         checked_bytes,
                         src,
-                        is_input_le,
-                        count $(, $generics $(: $bound $(+ $other)*)?)*
+                        ctx $(, $generics $(: $bound $(+ $other)*)?)*
                     )
                 }
         }
@@ -127,26 +121,24 @@ macro_rules! impl_readrawmut {
         impl<'b, $($generics : SpReadRawMut<'b> + SpOptHints $(+ $bound$(+ $other)*)*),*> SpReadRawMut<'b> for $typ {
             fn inner_from_mut_slice(
                 src: &mut Cursor<&'b mut [u8]>,
-                is_input_le: bool,
-                count: Option<usize>,
+                ctx: &mut SpCtx,
             ) -> Result<Self, crate::SpError>
             where
                 Self: Sized + SpOptHints {
                     let mut static_size = Self::STATIC_SIZE;
-                    if Self::COUNT_SIZE > 0 && count.is_some() {
+                    if Self::COUNT_SIZE > 0 && ctx.count.is_some() {
                         static_size -= Self::COUNT_SIZE;
                     }
 
                     let checked_bytes = validate_cursor(static_size, src)?;
                     unsafe {
-                        Self::inner_from_mut_slice_unchecked(checked_bytes, src, is_input_le, count)
+                        Self::inner_from_mut_slice_unchecked(checked_bytes, src, ctx)
                     }
                 }
             unsafe fn inner_from_mut_slice_unchecked(
                 checked_bytes: *mut u8,
                 src: &mut Cursor<&'b mut [u8]>,
-                is_input_le: bool,
-                count: Option<usize>,
+                ctx: &mut SpCtx,
             ) -> Result<Self, crate::SpError>
             where
                 Self: Sized + SpOptHints {
@@ -156,8 +148,7 @@ macro_rules! impl_readrawmut {
                         inner_from_mut_slice_unchecked,
                         checked_bytes,
                         src,
-                        is_input_le,
-                        count $(, $generics $(: $bound $(+ $other)*)?)*
+                        ctx $(, $generics $(: $bound $(+ $other)*)?)*
                     )
                 }
         }
@@ -172,11 +163,10 @@ macro_rules! impl_writer {
         impl<$($generics : SpWrite $(+ $bound$(+ $other)*)?),*> SpWrite for $typ {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
-                is_output_le: bool,
-                prepend_count: bool,
+                ctx: &mut SpCtx,
                 dst: &mut W,
             ) -> Result<usize, crate::SpError> {
-                $writer!(self $(as $inner_typ)?, is_output_le, prepend_count, dst $(, $generics $(: $bound $(+ $other)*)?)*)
+                $writer!(self $(as $inner_typ)?, ctx, dst $(, $generics $(: $bound $(+ $other)*)?)*)
             }
         }
     }
@@ -189,31 +179,28 @@ macro_rules! impl_writer_all {
         impl<$($generics : SpWrite $(+ $bound $(+ $other)*)?),*> SpWrite for [$typ] {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
-                is_output_le: bool,
-                prepend_count: bool,
+                ctx: &mut SpCtx,
                 dst: &mut W,
             ) -> Result<usize, crate::SpError> {
-                iterator_to_writer!(self, is_output_le, prepend_count, dst, 1)
+                iterator_to_writer!(self, ctx, dst, 1)
             }
         }
         impl<$($generics : SpWrite $(+ $bound $(+ $other)*)?),*> SpWrite for &[$typ] {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
-                is_output_le: bool,
-                prepend_count: bool,
+                ctx: &mut SpCtx,
                 dst: &mut W,
             ) -> Result<usize, crate::SpError> {
-                iterator_to_writer!(self, is_output_le, prepend_count, dst, 1)
+                iterator_to_writer!(self, ctx, dst, 1)
             }
         }
         impl<$($generics : SpWrite $(+ $bound$(+ $other)*)*),*> SpWrite for &mut [$typ] {
             fn inner_to_writer<W: Write + ?Sized>(
                 &self,
-                is_output_le: bool,
-                prepend_count: bool,
+                ctx: &mut SpCtx,
                 dst: &mut W,
             ) -> Result<usize, crate::SpError> {
-                iterator_to_writer!(self, is_output_le, prepend_count, dst, 1)
+                iterator_to_writer!(self, ctx, dst, 1)
             }
         }
     }
@@ -307,14 +294,12 @@ pub fn validate_cursor<T: AsRef<[u8]>>(
 /// Writes a primitive type into a Writer
 #[macro_use]
 macro_rules! prim_to_writer {
-    ($self:ident as $as_typ:ty, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
+    ($self:ident as $as_typ:ty, $ctx:ident, $dst: ident) => {{
         let s = unsafe { *($self as *const Self as *const $as_typ) };
-        s.inner_to_writer($is_output_le, $prepend_count, $dst)
+        s.inner_to_writer($ctx, $dst)
     }};
-    ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident) => {{
-        let _ = $prepend_count;
-
-        let value = if $is_output_le {
+    ($self:ident, $ctx:ident, $dst: ident) => {{
+        let value = if $ctx.is_little_endian {
             $self.to_le_bytes()
         } else {
             $self.to_be_bytes()
@@ -322,7 +307,10 @@ macro_rules! prim_to_writer {
 
         let bytes = value.as_ref();
         match $dst.write(bytes) {
-            Ok(v) => Ok(v),
+            Ok(v) => {
+                $ctx.cursor += v;
+                Ok(v)
+            },
             Err(_) => Err(SpError::NotEnoughSpace),
         }
     }};
@@ -330,51 +318,56 @@ macro_rules! prim_to_writer {
 /// Generates the write code for types that implement `.iter()`
 #[macro_use]
 macro_rules! iterator_to_writer {
-    ($self:ident, $is_output_le:ident, $prepend_count:ident, $dst: ident $(, $generics:tt $(: $bound:ident $(+ $other:ident)*)?)*) => {{
+    ($self:ident, $ctx:ident, $dst: ident $(, $generics:tt $(: $bound:ident $(+ $other:ident)*)?)*) => {{
         let mut total_sz = 0;
         // Write size if needed
-        if $prepend_count {
-            total_sz += ($self.len() as DefaultCountType).inner_to_writer($is_output_le, false, $dst)?;
+        if $ctx.count.is_none() {
+            total_sz += ($self.len() as DefaultCountType).inner_to_writer($ctx, $dst)?;
         }
 
-        iterator_to_writer!(inner, total_sz, $self, $is_output_le, $dst $(+ $generics)*);
+        // Dont propagate count field to inner types
+        $ctx.count = None;
+        iterator_to_writer!(inner, total_sz, $self, $ctx, $dst $(+ $generics)*);
 
+        $ctx.cursor += total_sz;
         Ok(total_sz)
     }};
     // Iterator with 1 element
-    (inner, $total_sz:ident, $self:ident, $is_output_le:ident, $dst: ident + $generic:tt) => {
+    (inner, $total_sz:ident, $self:ident, $ctx:ident, $dst: ident + $generic:tt) => {
         for t1 in $self.iter() {
-            $total_sz += t1.inner_to_writer($is_output_le, false, $dst)?;
+            $total_sz += t1.inner_to_writer($ctx, $dst)?;
         }
     };
     // Iterator with 2 elements
-    (inner, $total_sz:ident, $self:ident, $is_output_le:ident, $dst: ident + $generic1:tt + $generic2:tt) => {
+    (inner, $total_sz:ident, $self:ident, $ctx:ident, $dst: ident + $generic1:tt + $generic2:tt) => {
         for (t1, t2) in $self.iter() {
-            $total_sz += t1.inner_to_writer($is_output_le, false, $dst)?;
-            $total_sz += t2.inner_to_writer($is_output_le, false, $dst)?;
+            $total_sz += t1.inner_to_writer($ctx, $dst)?;
+            $total_sz += t2.inner_to_writer($ctx, $dst)?;
         }
     };
 }
 /// Copies a primitive type from a raw pointer
 #[macro_use]
 macro_rules! prim_from_ptr {
-    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
+        let _ = $src;
         // Make sure we never accidentaly cast between invalid types
         crate::sa::const_assert_eq!(std::mem::size_of::<$typ>(), std::mem::size_of::<$as_typ>());
-        let _ = $count;
-        let _ = $src;
 
         #[cfg(feature = "verbose")]
         crate::debug!(
-            "[{}] = 0x{:0width$X}",
-            stringify!($typ),
+            "[0x{:X}] : 0x{:0width$X} [{}]",
+            $ctx.cursor,
             std::ptr::read_unaligned($checked_bytes as *mut $as_typ),
+            stringify!($typ),
             width = std::mem::size_of::<$as_typ>() * 2,
         );
 
         let val: $typ = std::ptr::read_unaligned($checked_bytes as *const $typ);
 
-        Ok(if $is_input_le {
+        $ctx.cursor += std::mem::size_of::<$typ>();
+
+        Ok(if $ctx.is_little_endian {
             if cfg!(target_endian = "little") {
                 val
             } else {
@@ -396,27 +389,28 @@ macro_rules! prim_from_ptr {
 /// Makes a mutable reference from a pointer if alignment is satified
 #[macro_use]
 macro_rules! mutref_from_ptr {
-    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
+        let _ = $src;
         // Make sure we never accidentaly cast between invalid types
         crate::sa::const_assert_eq!(std::mem::align_of::<$typ>(), std::mem::align_of::<&$as_typ>());
 
-        let _ = $count;
-        let _ = $src;
-        let _ = $is_input_le;
-
         #[cfg(feature = "verbose")]
         crate::debug!(
-            "[{}] = 0x{:X}",
+            "[0x{:X}] : 0x{:0width$X} [{}]",
+            $ctx.cursor,
+            std::ptr::read_unaligned($checked_bytes as *mut $as_typ),
             stringify!($typ),
-            std::ptr::read_unaligned($checked_bytes as *mut $as_typ)
+            width = std::mem::size_of::<$as_typ>() * 2
         );
 
         // Make sure to only make references to properly aligned pointers
-        if std::mem::align_of::<$as_typ>() > 1
-            && $checked_bytes.align_offset(std::mem::align_of::<$as_typ>()) != 0
+        if std::mem::align_of::<$typ>() > 1
+            && $checked_bytes.align_offset(std::mem::align_of::<$typ>()) != 0
         {
             return Err(SpError::BadAlignment);
         }
+
+        $ctx.cursor += std::mem::size_of::<$as_typ>();
 
         // Convert pointer to Rust reference
         Ok(&mut *($checked_bytes as *mut $typ))
@@ -425,11 +419,11 @@ macro_rules! mutref_from_ptr {
 /// Copies a bool from a raw pointer
 #[macro_use]
 macro_rules! bool_from_ptr {
-    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
         // Make sure we never accidentaly cast between invalid types
         crate::sa::const_assert!(std::mem::size_of::<$typ>() == std::mem::size_of::<$as_typ>());
         // Read as unsigned & proper endianness
-        let val = <$as_typ>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
+        let val = <$as_typ>::$unchecked_reader($checked_bytes, $src, $ctx)?;
         // Convert to bool
         Ok(val != 0)
     }};
@@ -437,11 +431,11 @@ macro_rules! bool_from_ptr {
 /// Copies a floating type from a raw pointer
 #[macro_use]
 macro_rules! float_from_ptr {
-    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
         // Make sure we never accidentaly cast between invalid types
         crate::sa::const_assert!(std::mem::size_of::<$typ>() == std::mem::size_of::<$as_typ>());
         // Read as unsigned & proper endianness
-        let val = <$as_typ>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
+        let val = <$as_typ>::$unchecked_reader($checked_bytes, $src, $ctx)?;
         // Convert to float
         Ok(*(&val as *const $as_typ as *const $typ))
     }};
@@ -450,11 +444,11 @@ macro_rules! float_from_ptr {
 /// Copies an Atomic from a raw pointer
 #[macro_use]
 macro_rules! atomic_from_ptr {
-    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
         // Make sure we never accidentaly cast between invalid types
         crate::sa::const_assert!(std::mem::size_of::<$typ>() == std::mem::size_of::<$as_typ>());
         // Read as unsigned & proper endianness
-        let val = <$as_typ>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
+        let val = <$as_typ>::$unchecked_reader($checked_bytes, $src, $ctx)?;
         // Convert to atomic
         Ok(<$typ>::new(val))
     }};
@@ -463,11 +457,11 @@ macro_rules! atomic_from_ptr {
 /// Copies a NonZero from a raw pointer
 #[macro_use]
 macro_rules! nonzero_from_ptr {
-    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $is_input_le:expr, $count:expr) => {{
+    ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
         // Make sure we never accidentaly cast between invalid types
         crate::sa::const_assert!(std::mem::size_of::<$typ>() == std::mem::size_of::<$as_typ>());
         // Read as unsigned & proper endianness
-        let val = <$as_typ>::$unchecked_reader($checked_bytes, $src, $is_input_le, $count)?;
+        let val = <$as_typ>::$unchecked_reader($checked_bytes, $src, $ctx)?;
         // Convert to NonZero
         match <$typ>::new(val) {
             Some(s) => Ok(s),

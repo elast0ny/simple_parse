@@ -15,6 +15,25 @@ pub use default_impls::*;
 
 pub use simple_parse_derive::*;
 
+/// A context passed around `SpRead*` and `SpWrite*` functions
+pub struct SpCtx {
+    /// How many bytes have been read/written so far
+    pub cursor: usize,
+    /// If the abitrary input/output bytes should be treated as little endian
+    pub is_little_endian: bool,
+    /// If a dynamically sized Self uses an external count field, and what its contents are
+    pub count: Option<usize>,
+}
+impl Default for SpCtx {
+    fn default() -> Self {
+        Self{
+            cursor: 0,
+            is_little_endian: cfg!(target_endian="little"),
+            count: None,
+        }
+    }
+}
+
 #[doc(hidden)]
 /// This type is used for dynamically sized type's default implementations
 pub type DefaultCountType = u32;
@@ -49,8 +68,7 @@ pub trait SpRead {
     /// This functions allows specifying endianness and count fields as opposed to using defaults with `from_reader`
     fn inner_from_reader<R: Read + ?Sized>(
         src: &mut R,
-        is_input_le: bool,
-        count: Option<usize>,
+        ctx: &mut SpCtx,
     ) -> Result<Self, crate::SpError>
     where
         Self: Sized + SpOptHints;
@@ -65,8 +83,7 @@ pub trait SpRead {
     unsafe fn inner_from_reader_unchecked<R: Read + ?Sized>(
         checked_bytes: *mut u8,
         src: &mut R,
-        is_input_le: bool,
-        count: Option<usize>,
+        ctx: &mut SpCtx,
     ) -> Result<Self, crate::SpError>
     where
         Self: Sized + SpOptHints;
@@ -78,9 +95,7 @@ pub trait SpRead {
     {
         Self::inner_from_reader(
             src,
-            // Default to host's endianness
-            cfg!(target_endian = "little"),
-            None,
+            &mut SpCtx::default(),
         )
     }
 }
@@ -92,8 +107,7 @@ pub trait SpReadRaw<'b> {
     /// This functions allows specifying endianness and count fields as opposed to using defaults with `from_slice`
     fn inner_from_slice(
         src: &mut Cursor<&'b [u8]>,
-        is_input_le: bool,
-        count: Option<usize>,
+        ctx: &mut SpCtx,
     ) -> Result<Self, crate::SpError>
     where
         Self: Sized + SpOptHints;
@@ -111,8 +125,7 @@ pub trait SpReadRaw<'b> {
     unsafe fn inner_from_slice_unchecked(
         checked_bytes: *const u8,
         src: &mut Cursor<&'b [u8]>,
-        is_input_le: bool,
-        count: Option<usize>,
+        ctx: &mut SpCtx,
     ) -> Result<Self, crate::SpError>
     where
         Self: Sized + SpOptHints;
@@ -122,7 +135,7 @@ pub trait SpReadRaw<'b> {
     where
         Self: Sized + SpOptHints,
     {
-        Self::inner_from_slice(src, cfg!(target_endian = "little"), None)
+        Self::inner_from_slice(src, &mut SpCtx::default())
     }
 }
 
@@ -133,8 +146,7 @@ pub trait SpReadRawMut<'b> {
     /// This functions allows specifying endianness and count fields as opposed to using defaults with `from_slice`
     fn inner_from_mut_slice(
         src: &mut Cursor<&'b mut [u8]>,
-        is_input_le: bool,
-        count: Option<usize>,
+        ctx: &mut SpCtx,
     ) -> Result<Self, crate::SpError>
     where
         Self: Sized + SpOptHints;
@@ -152,8 +164,7 @@ pub trait SpReadRawMut<'b> {
     unsafe fn inner_from_mut_slice_unchecked(
         checked_bytes: *mut u8,
         src: &mut Cursor<&'b mut [u8]>,
-        is_input_le: bool,
-        count: Option<usize>,
+        ctx: &mut SpCtx,
     ) -> Result<Self, crate::SpError>
     where
         Self: Sized + SpOptHints;
@@ -163,7 +174,7 @@ pub trait SpReadRawMut<'b> {
     where
         Self: Sized + SpOptHints,
     {
-        Self::inner_from_mut_slice(src, cfg!(target_endian = "little"), None)
+        Self::inner_from_mut_slice(src, &mut SpCtx::default())
     }
 }
 
@@ -172,13 +183,12 @@ pub trait SpWrite {
     /// Writes the byte representation for Self into a `&mut Write` with control over endianness
     fn inner_to_writer<W: Write + ?Sized>(
         &self,
-        is_output_le: bool,
-        prepend_count: bool,
+        ctx: &mut SpCtx,
         dst: &mut W,
     ) -> Result<usize, crate::SpError>;
 
     /// Writes the byte representation for Self into a `&mut Write`
     fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-        self.inner_to_writer(cfg!(target_endian = "little"), true, dst)
+        self.inner_to_writer(&mut SpCtx::default(), dst)
     }
 }
