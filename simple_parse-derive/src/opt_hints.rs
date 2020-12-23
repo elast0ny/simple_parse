@@ -97,7 +97,13 @@ pub (crate) fn generate_struct_hints(
                 r.static_size.extend(quote!{ + });
             }
 
-            r.static_size.extend(get_static_size(field_type));
+            // Set assumed static size to 0 if a custom reader is specified
+            if field_attrs.reader.is_some() {
+                r.static_size.extend(quote!{0});
+            } else {
+                r.static_size.extend(get_static_size(field_type));
+            }
+            
             
             // If field has a count annotation, remove the COUNT_SIZE from it
             if field_attrs.count.is_some() {
@@ -107,23 +113,26 @@ pub (crate) fn generate_struct_hints(
             }
         }
         
+        // Add constant assertions to make sure we assume dyn/static properly
         if is_var_type {
             got_var = true;
-            let t = match field_type {
-                // Remove lifetimes from references
-                syn::Type::Reference(r) => {
-                    let t = r.elem.as_ref();
-                    quote!{&#t}
-                }
-                _ => {
-                    quote!{#field_type}
-                }
-            };
-            r.const_asserts.extend(quote!{
-                ::simple_parse::sa::const_assert!(<#t as ::simple_parse::SpOptHints>::IS_VAR_SIZE == true);
-                
-            });
-        } else {
+            if field_attrs.reader.is_none() {
+                let t = match field_type {
+                    // Remove lifetimes from references
+                    syn::Type::Reference(r) => {
+                        let t = r.elem.as_ref();
+                        quote!{&#t}
+                    }
+                    _ => {
+                        quote!{#field_type}
+                    }
+                };
+                r.const_asserts.extend(quote!{
+                    ::simple_parse::sa::const_assert!(<#t as ::simple_parse::SpOptHints>::IS_VAR_SIZE == true);
+                    
+                });
+            }
+        } else if field_attrs.reader.is_none() {
             r.const_asserts.extend(quote!{
                 ::simple_parse::sa::const_assert!(<#field_type as ::simple_parse::SpOptHints>::IS_VAR_SIZE == false); 
             });

@@ -242,20 +242,17 @@ pub(crate) fn get_parse_fn_name(
 pub(crate) fn is_var_size(typ: &Type, attrs: Option<&FieldAttributes>) -> bool {
     if let Some(attrs) = attrs {
         // Types that take a count are always variably sized
-        if attrs.count.is_some() || attrs.var_size.is_some() {
+        if attrs.count.is_some() || attrs.var_size.is_some() || attrs.reader.is_some() {
             return true;
         }
     }
 
-    let field_ty: String =
-    match typ {
+    let field_ty: String = match typ {
         syn::Type::Reference(r) => {
             let t = r.elem.as_ref();
-            (quote!{&#t}).to_string()
-        },
-        _ => {
-            (quote!{#typ}).to_string()
-        },
+            (quote! {&#t}).to_string()
+        }
+        _ => (quote! {#typ}).to_string(),
     };
 
     // All the types we know are dynamic
@@ -281,17 +278,15 @@ pub(crate) fn is_var_size(typ: &Type, attrs: Option<&FieldAttributes>) -> bool {
 }
 
 /// Returns the static size of a type
-/// 
+///
 /// This is needed to get around an issue with const generics.
 /// When Self is a generic type, it's Self::STATIC_SIZE cannot be evaluated as const so
 /// we must use another non-generic type's STATIC_SIZE.
 pub(crate) fn get_static_size(typ: &Type) -> proc_macro2::TokenStream {
-
     let field_ty = quote! {#typ}.to_string();
-    
     // Return <bool>::STATIC_SIZE for Option<T>
     if field_ty == "Option <" {
-        quote!{
+        quote! {
             <bool as ::simple_parse::SpOptHints>::STATIC_SIZE
         }
     // Return <DefaultCountType>::STATIC_SIZE for generic containers
@@ -304,14 +299,112 @@ pub(crate) fn get_static_size(typ: &Type) -> proc_macro2::TokenStream {
         || field_ty.starts_with("BTreeMap <")
         || field_ty.starts_with("BinaryHeap <")
     {
-        quote!{
+        quote! {
             <::simple_parse::DefaultCountType as ::simple_parse::SpOptHints>::STATIC_SIZE
         }
     } else if field_ty.contains('<') {
         panic!("Generic type '{}' cannot be used as a field because Rust currently does not handle const generics properly (Required for SpOptHints::STATIC_SIZE)");
     } else {
-        quote!{
+        quote! {
             <#typ as ::simple_parse::SpOptHints>::STATIC_SIZE
         }
     }
+}
+
+pub(crate) fn split_custom_attr(
+    contents: &str,
+    fields: &syn::Fields,
+    cur_field_idx: usize,
+    prefix: Option<&str>,
+) -> Result<(proc_macro2::TokenStream, proc_macro2::TokenStream), Box<dyn std::error::Error>> {
+    let mut fn_name = String::new();
+    let mut field_names = Vec::new();
+    let mut got_path = false;
+    for (idx, parts) in contents.split(',').enumerate() {
+        let cleaned = parts.trim();
+        let mut cur_item = "field name";
+        if idx == 0 {
+            cur_item = "function name";
+        }
+
+        // Try to catch invalid values early. Anything missed here should cause a compilation error at the call site anyway
+        // Air on the strict side here, only allow alphanumeric, ':', '_' or '-'
+        if cleaned.len() == 0 {
+            return Err(From::from(format!("{} is empty", cur_item)));
+        }
+        
+        for ch in cleaned.chars() {
+            if idx == 0 && ch == ':' {
+                got_path = true;
+                continue;
+            } else if ch == '_' || ch == '-' {
+                continue;
+            } else if ch.is_alphanumeric() {
+                continue;
+            }
+
+            return Err(From::from(format!("{} is invalid : '{}'", cur_item, cleaned)));
+        }
+
+        if idx == 0 {
+            fn_name = cleaned.to_string();
+        } else {
+            field_names.push(cleaned.to_string());
+        }
+    }
+
+    let fn_name_ts: proc_macro2::TokenStream;
+    
+    if got_path {
+        match syn::parse_str::<syn::Path>(&fn_name) {
+            Ok(v) => fn_name_ts = quote!{#v},
+            Err(e) => {
+                return Err(From::from(format!(
+                    "provided function name '{}' is an invalid path : {}",
+                    fn_name, e
+                )))
+            }
+        };
+    }else {
+         match syn::parse_str::<syn::Ident>(&fn_name) {
+            Ok(v) => fn_name_ts = quote!{#v},
+            Err(e) => {
+                return Err(From::from(format!(
+                    "provided function name '{}' is an invalid identifier : {}",
+                    fn_name, e
+                )))
+            }
+        };
+    }
+
+    let mut valid_names = HashMap::with_capacity(fields.len());
+    let mut sorted_names = Vec::with_capacity(fields.len());
+    for (idx, field) in fields.iter().enumerate() {
+        if idx == cur_field_idx {
+            break;
+        }
+        let simple_name = generate_field_name(field, idx, None, false).to_string();
+        sorted_names.push(simple_name.clone());
+        valid_names.insert(simple_name, generate_field_name(field, idx, prefix, false));
+    }
+
+    let mut dependent_fields = proc_macro2::TokenStream::new();
+    for fname in field_names.iter() {
+        let actual_name = valid_names.get(fname);
+        match actual_name {
+            Some(v) => {
+                dependent_fields.extend(quote! {
+                    &#v,
+                });
+            }
+            None => {
+                return Err(From::from(format!(
+                    "field name '{}' is invalid. Valid options are : {:?}",
+                    fname, sorted_names
+                )))
+            }
+        }
+    }
+
+    Ok((fn_name_ts, dependent_fields))
 }

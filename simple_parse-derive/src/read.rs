@@ -258,15 +258,17 @@ fn generate_fields_read(
                 - <#field_type as ::simple_parse::SpOptHints>::COUNT_SIZE
             })
         }
-
-        // Start aggregating sizes for static fields after hitting the first dyn field
-        if hit_first_dyn {
-            num_summed_sizes += 1;
-            if num_summed_sizes > 1 {
-                static_size_code.extend(quote! { + });
+        
+        if field_attrs.reader.is_none() {
+            // Start aggregating sizes for static fields after hitting the first dyn field
+            if hit_first_dyn {
+                num_summed_sizes += 1;
+                if num_summed_sizes > 1 {
+                    static_size_code.extend(quote! { + });
+                }
+                // Add this field to aggregated static field sizes
+                static_size_code.extend(quote!{#cur_field_size});
             }
-            // Add this field to aggregated static field sizes
-            static_size_code.extend(quote!{#cur_field_size});
         }
 
         // Get the count field
@@ -282,17 +284,16 @@ fn generate_fields_read(
         };
 
         // Get custom reader if provided
-        #[allow(unreachable_code, unused_variables)]
         let read_call = match field_attrs.reader {
             Some(ref s) => {
-                panic!("Custom reader not implemented yet !");
-                let s: TokenStream = s.parse().unwrap();
-                quote! {
-                    {
-                        let is_input_le = #is_input_le;
-                        let count: Option<usize> = #count_field;
-                        #s
+                let (fn_name, dependent_fields) = match split_custom_attr(s, &fields, idx, None) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        panic!("Invalid custom reader for field '{}', {}",field_name.to_string(), e);
                     }
+                };
+                quote!{
+                    #fn_name(#dependent_fields src, #is_input_le, #count_field)
                 }
             }
             None => {
@@ -309,7 +310,7 @@ fn generate_fields_read(
         });
 
         if is_var_type || idx + 1 == num_fields {
-            if hit_first_dyn {
+            if hit_first_dyn && num_summed_sizes > 0 {
                 let validate_static_size =
                     generate_validate_size_code(&quote! {#static_size_code}, &reader_type);
                 read_code.extend(quote! {
