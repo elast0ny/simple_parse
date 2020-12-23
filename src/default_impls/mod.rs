@@ -366,9 +366,10 @@ macro_rules! prim_from_ptr {
 
         #[cfg(feature = "verbose")]
         crate::debug!(
-            "[{}] = 0x{:X}",
+            "[{}] = 0x{:0width$X}",
             stringify!($typ),
-            std::ptr::read_unaligned($checked_bytes as *mut $as_typ)
+            std::ptr::read_unaligned($checked_bytes as *mut $as_typ),
+            width = std::mem::size_of::<$as_typ>() * 2,
         );
 
         let val: $typ = std::ptr::read_unaligned($checked_bytes as *const $typ);

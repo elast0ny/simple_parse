@@ -64,12 +64,29 @@ pub(crate) struct FieldAttributes {
     #[darling(default)]
     pub count: Option<String>,
 
-    // Not implemented yet
-    // TODO
-    //      Figure out how to allow end users to provide either a block of code
-    //      or a function name that will be called instead of the default implementation 
+    /// Allows for custom parsing functions to populate the annotated field.
+    /// The provided String will be parsed as a comma seperated function name followed by field names that have already been populated.
+    /// For example :
+    ///     struct MyStruct {
+    ///         some_field: bool,
+    ///         #[sp(reader="custom_parser, some_field")]
+    ///         optionnal: Option<usize>,
+    ///     }
+    /// Will end up generating code that calls a function with signature :
+    ///     fn custom_parser(some_field: &bool, src: CustomSrc, is_input_le:bool, count: Option<usize>) -> Result<T, SpError>
     #[darling(default)]
     pub reader: Option<String>,
+    
+    /// Allows for custom writing functions to convert the annotated field into bytes.
+    /// The provided String will be parsed as a comma seperated function name followed by field names that have already been populated.
+    /// For example :
+    ///     struct MyStruct {
+    ///         some_field: bool,
+    ///         #[sp(writer="custom_writer, some_field")]
+    ///         optionnal: Option<usize>,
+    ///     }
+    /// Will end up generating code that calls a function with signature :
+    ///     fn custom_writer(some_field: &bool, is_output_le:bool, prepend_count: bool, dst: &mut Write) -> Result<usize, SpError>
     #[darling(default)]
     pub writer: Option<String>,
 
