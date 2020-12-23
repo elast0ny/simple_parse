@@ -15,7 +15,7 @@ pub use default_impls::*;
 
 pub use simple_parse_derive::*;
 
-/// A context passed around `SpRead*` and `SpWrite*` functions
+/// A context passed around [SpRead] and [SpWrite] functions
 pub struct SpCtx {
     /// How many bytes have been read/written so far
     pub cursor: usize,
@@ -44,7 +44,7 @@ pub type DefaultCountType = u32;
 /// MAX_ALLOC_SIZE will be read at a time instead of allocating INT_MAX bytes in one go.
 pub const MAX_ALLOC_SIZE: usize = 1024;
 
-/// Provides optimization hints used by SpRead* traits.
+/// Provides optimization hints used by [SpRead] traits.
 ///
 /// # Safety
 /// When not using defaults, implementors must be very careful not to return invalid values
@@ -58,12 +58,12 @@ pub unsafe trait SpOptHints {
     const COUNT_SIZE: usize = 0;
 }
 
-/// Parses `Self` from a source implementing `Read` (File,TcpStream, etc...)
+/// Parses `Self` from a source implementing [Read](std::io::Read) ([File](std::fs::File),[TcpStream](std::net::TcpStream), etc...)
 ///
 /// This trait is most usefull when the bytes are coming from some kind of IO stream.
-/// When possible, it is recommend to use `SpReadRaw[Mut]` instead for better performance.
+/// When possible, it is recommend to use [SpReadRaw] instead for better performance.
 pub trait SpRead {
-    /// Converts bytes from a `&mut Read` into `Self`
+    /// Converts bytes from a [Reader](std::io::Read) into `Self`
     /// 
     /// This functions allows specifying endianness and count fields as opposed to using defaults with `from_reader`
     fn inner_from_reader<R: Read + ?Sized>(
@@ -100,7 +100,7 @@ pub trait SpRead {
     }
 }
 
-/// Parses `Self` from a `Cursor<&[u8]>`
+/// Parses `Self` from a [Cursor<&\[u8\]>](std::io::Cursor)
 pub trait SpReadRaw<'b> {
     /// Converts bytes from a `Cursor<&[u8]>` into `Self`
     /// 
@@ -139,7 +139,7 @@ pub trait SpReadRaw<'b> {
     }
 }
 
-/// Parses `Self` from a `Cursor<&mut [u8]>`
+/// Parses `Self` from a [Cursor<&mut \[u8\]>](std::io::Cursor)
 pub trait SpReadRawMut<'b> {
     /// Converts bytes from a `Cursor<&mut [u8]>` into `Self`
     /// 
@@ -178,7 +178,7 @@ pub trait SpReadRawMut<'b> {
     }
 }
 
-/// Writes `T` into a dst implementing `Write` (File, TcpStream, Vec<u8>, etc...)
+/// Writes `T` into a [Writer](std::io::Write) ([File](std::fs::File),[TcpStream](std::net::TcpStream), etc...)
 pub trait SpWrite {
     /// Writes the byte representation for Self into a `&mut Write` with control over endianness
     fn inner_to_writer<W: Write + ?Sized>(
