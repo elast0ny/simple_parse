@@ -286,7 +286,7 @@ fn generate_fields_read(
         // Get custom reader if provided
         let read_call = match field_attrs.reader {
             Some(ref s) => {
-                let (fn_name, dependent_fields) = match split_custom_attr(s, &fields, idx, None) {
+                let (fn_name, dependent_fields) = match split_custom_attr(s, &fields, idx, None, false) {
                     Ok(v) => v,
                     Err(e) => {
                         panic!("Invalid custom reader for field '{}', {}",field_name.to_string(), e);

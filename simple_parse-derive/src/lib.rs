@@ -316,6 +316,7 @@ pub(crate) fn split_custom_attr(
     fields: &syn::Fields,
     cur_field_idx: usize,
     prefix: Option<&str>,
+    allow_all_fields:bool,
 ) -> Result<(proc_macro2::TokenStream, proc_macro2::TokenStream), Box<dyn std::error::Error>> {
     let mut fn_name = String::new();
     let mut field_names = Vec::new();
@@ -381,7 +382,11 @@ pub(crate) fn split_custom_attr(
     let mut sorted_names = Vec::with_capacity(fields.len());
     for (idx, field) in fields.iter().enumerate() {
         if idx == cur_field_idx {
-            break;
+            if !allow_all_fields {
+                break;
+            } else {
+                continue;
+            }
         }
         let simple_name = generate_field_name(field, idx, None, false).to_string();
         sorted_names.push(simple_name.clone());

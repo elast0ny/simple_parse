@@ -67,11 +67,13 @@ pub(crate) struct FieldAttributes {
     /// Allows for custom parsing functions to populate the annotated field.
     /// The provided String will be parsed as a comma seperated function name followed by field names that have already been populated.
     /// For example :
+    /// ```Rust
     ///     struct MyStruct {
     ///         some_field: bool,
     ///         #[sp(reader="custom_parser, some_field")]
     ///         optionnal: Option<usize>,
     ///     }
+    /// ```
     /// Will end up generating code that calls a function with signature :
     ///     fn custom_parser(some_field: &bool, src: CustomSrc, ctx: &mut SpCtx) -> Result<T, SpError>
     #[darling(default)]
@@ -80,11 +82,13 @@ pub(crate) struct FieldAttributes {
     /// Allows for custom writing functions to convert the annotated field into bytes.
     /// The provided String will be parsed as a comma seperated function name followed by field names that have already been populated.
     /// For example :
+    /// ```Rust
     ///     struct MyStruct {
     ///         some_field: bool,
     ///         #[sp(writer="custom_writer")]
     ///         optionnal: Option<usize>,
     ///     }
+    /// ```
     /// Will end up generating code that calls a function with signature :
     ///     fn custom_writer(this: &Option<usize>, ctx: &mut SpCtx, dst: &mut Write) -> Result<usize, SpError>
     #[darling(default)]

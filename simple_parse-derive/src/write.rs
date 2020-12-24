@@ -135,7 +135,7 @@ fn generate_fields_write(
         // Pick between custom write or default
         let write_call = match field_attrs.writer {
             Some(ref s) => {
-                let (fn_name, dependent_fields) = match split_custom_attr(s, &fields, idx, None) {
+                let (fn_name, dependent_fields) = match split_custom_attr(s, &fields, idx, None, true) {
                     Ok(v) => v,
                     Err(e) => {
                         panic!("Invalid custom writer for field '{}', {}",field_name.to_string(), e);
