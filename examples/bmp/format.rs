@@ -32,12 +32,14 @@ pub enum DIBHeader {
         clr_used: u32,
         important: u32,
         // The logic for parsing the two fields bellow is complicated. We must use custom readers.
+        // These custom fns can be abstract trait fns
         #[sp(
             reader="BitmapCompression::read, compression",
             writer="BitmapCompression::write"
         )]
         compression_info: BitmapCompression,
         #[sp(
+            // Regular functions are also allowed
             reader="parse_color_table, clr_used, compression_info, bit_count",
             writer="write_color_table"
         )]
@@ -60,6 +62,16 @@ pub enum BitmapCompression {
         blue: u32,
     }
 }
+
+/// holds a color from the bmp color table
+#[derive(Debug, SpRead, SpWrite)]
+pub struct RgbQuad {
+    blue: u8,
+    green: u8,
+    red: u8,
+    reserved: u8,
+}
+
 impl BitmapCompression {
     // Custom SpRead parser based on the compression value
     fn read<R: Read + ?Sized>(compression_bitmask: &u32, src: &mut R, ctx: &mut SpCtx) -> Result<Self, SpError> {
@@ -123,15 +135,6 @@ impl BitmapCompression {
     }
 }
 
-/// holds a color from the bmp color table
-#[derive(Debug, SpRead, SpWrite)]
-pub struct RgbQuad {
-    blue: u8,
-    green: u8,
-    red: u8,
-    reserved: u8,
-}
-
 /// Parses a BMP color table based on header values
 fn parse_color_table<R: Read + ?Sized>(clr_used: &u32, compression: &BitmapCompression, bit_count: &u16, src: &mut R, ctx: &mut SpCtx) -> Result<Vec<RgbQuad>, SpError> {
     // The bitmap is not compressed which means every pixel contains the actual color information.
@@ -167,10 +170,10 @@ fn parse_color_table<R: Read + ?Sized>(clr_used: &u32, compression: &BitmapCompr
 }
 
 /// Writes BMP a color table
-fn write_color_table<W: Write + ?Sized>(table: &Vec<RgbQuad>, ctx: &mut SpCtx, dst: &mut W) -> Result<usize, SpError> {
+fn write_color_table<W: Write + ?Sized>(this: &Vec<RgbQuad>, ctx: &mut SpCtx, dst: &mut W) -> Result<usize, SpError> {
     let mut size_written = 0;
     // extra validation could be done here to ensure clr_used and bit_count is valid for these colors
-    for color in table.iter() {
+    for color in this.iter() {
         size_written += color.inner_to_writer(ctx, dst)?;
     }
     Ok(size_written)
