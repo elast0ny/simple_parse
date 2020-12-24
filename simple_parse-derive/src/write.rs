@@ -1,7 +1,6 @@
 use darling::FromDeriveInput;
 use proc_macro2::TokenStream;
 use quote::quote;
-use std::collections::HashMap;
 use syn::{parse_quote, Data, DataEnum, DeriveInput, Fields};
 
 use crate::*;
@@ -64,31 +63,58 @@ fn generate_fields_write(
         Some(ref e) => is_lower_endian(e),
     };
 
-    let mut count_fields = HashMap::new();
+    // Holds the index of a count field's contents
+    let mut count_field_vals = Vec::with_capacity(fields.len());
+    count_field_vals.resize(fields.len(), None);
 
-    // Generate a map of fields that are counts to other fields
+    let mut simple_field_names = Vec::with_capacity(fields.len());
+    let fields: Vec<&syn::Field> = fields.iter().collect();
+
+    // Iterate through fields to link count fields and populate validation functions
     for (idx, field) in fields.iter().enumerate() {
         let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
-        if field_attrs.count.is_none() {
-            continue;
-        }
+        let field_ident = generate_field_name(field, idx, prefix, false);
+        
+        // save the simple field name for each field seen so far
+        simple_field_names.push(generate_field_name(field, idx, None, false).to_string());
+        
+        // Get custom validator
+        match field_attrs.validate {
+            Some(ref s) => {
+                let (fn_name, other_fields) = match split_custom_attr(s, &fields, idx, prefix, AllowFields::AfterCurrentAsSome) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        panic!("Invalid custom validator for field '{}', {}", &simple_field_names[idx], e);
+                    }
+                };
+                write_code.extend(quote!{
+                    ctx.is_reading = false;
+                    #fn_name(&#field_ident, #other_fields ctx)?;
+                })
+            },
+            None => {},
+        };
 
-        if let Some(field_name) = generate_count_field_name(&field_attrs.count, fields, prefix, false) {
-            if count_fields.is_empty() {
-                write_code.extend(quote! {use std::convert::TryInto;});
+        if let Some(count_field_name) = field_attrs.count.as_ref() {
+            let mut count_field_idx = idx;
+            for i in 0..idx {
+                if count_field_name.as_str() == simple_field_names[i].as_str() {
+                    count_field_idx = i;
+                    break;
+                }
             }
-            count_fields.insert(
-                field_name.to_string(), // Name of the count=X field
-                generate_field_name(field, idx, prefix, false), // Current field that needs count
-            );
-        } else {
-            panic!("count annotation for {} does not point to a valid field...", generate_field_name(field, idx, None, false).to_string());
+            // count field not found
+            if count_field_idx == idx {
+                panic!("#[sp(count)] annotation on field '{}' referers to an unknown field '{}'. Valid values are {:?}", &simple_field_names[idx], count_field_name, &simple_field_names[..idx]);
+            }
+
+            // Save link from count field to this field
+            count_field_vals[count_field_idx] = Some(idx);
         }
     }
     
     // Generate write call for every field
     for (idx, field) in fields.iter().enumerate() {
-        let field_name = generate_field_name(field, idx, None, false);
         let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
         let field_ident = generate_field_name(field, idx, prefix, false);
 
@@ -111,8 +137,11 @@ fn generate_fields_write(
         };
 
         // If this field is a count field, write the len instead
-        if let Some(ref ident) = count_fields.get(&field_ident.to_string()) {
-            let ftype = if let ::syn::Type::Reference(ty) = &field.ty {
+        if let Some(content_field_idx) = count_field_vals[idx] {
+            let content_field = fields[content_field_idx];
+            let content_ident = generate_field_name(content_field, content_field_idx, prefix, false);
+
+            let count_type = if let ::syn::Type::Reference(ty) = &field.ty {
                 let t = &ty.elem;
                 quote!{#t}
             } else {
@@ -122,7 +151,7 @@ fn generate_fields_write(
             
             // TODO : Add special case so we dont call .len() on Option
             write_code.extend(quote! {
-                let _f: #ftype = match #ident.len().try_into() {
+                let _f: #count_type = match #content_ident.len().try_into() {
                     Ok(v) => v,
                     Err(e) => return Err(::simple_parse::SpError::CountFieldOverflow),
                 };
@@ -135,10 +164,10 @@ fn generate_fields_write(
         // Pick between custom write or default
         let write_call = match field_attrs.writer {
             Some(ref s) => {
-                let (fn_name, dependent_fields) = match split_custom_attr(s, &fields, idx, None, true) {
+                let (fn_name, dependent_fields) = match split_custom_attr(s, &fields, idx, None, AllowFields::All) {
                     Ok(v) => v,
                     Err(e) => {
-                        panic!("Invalid custom writer for field '{}', {}",field_name.to_string(), e);
+                        panic!("Invalid custom writer for field '{}', {}", &simple_field_names[idx], e);
                     }
                 };
                 quote!{

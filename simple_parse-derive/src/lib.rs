@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use darling::{FromDeriveInput, FromField, FromVariant};
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DataEnum, DeriveInput, Field, Fields, GenericParam, Generics, Type};
+use syn::{parse_macro_input, DataEnum, DeriveInput, Field, GenericParam, Generics, Type};
 
 mod attributes;
 mod opt_hints;
@@ -117,33 +117,6 @@ pub(crate) fn generate_field_name(
     }
 
     fname.parse().unwrap()
-}
-
-/// Converts `count` into a useable field name. Returns None if `count` is None or if the value of `count` cannot be found.
-/// eg. self.num_field | *self.num_field | field_01
-pub(crate) fn generate_count_field_name(
-    count: &Option<String>,
-    fields: &Fields,
-    obj_name: Option<&str>,
-    deref_references: bool,
-) -> Option<proc_macro2::TokenStream> {
-    let count_field = match count {
-        None => return None,
-        Some(s) => s,
-    };
-
-    let mut count_field_name = None;
-    for (idx, field) in fields.iter().enumerate() {
-        let cur_field = match field.ident {
-            Some(ref i) => i.to_string(),
-            None => format!("field_{}", idx),
-        };
-        if count_field == &cur_field {
-            count_field_name = Some(generate_field_name(field, idx, obj_name, deref_references));
-        }
-    }
-
-    count_field_name
 }
 
 /// Returns whether the string is set to "little"
@@ -311,12 +284,23 @@ pub(crate) fn get_static_size(typ: &Type) -> proc_macro2::TokenStream {
     }
 }
 
+pub (crate) enum AllowFields {
+    /// Allow references to any field in the struct
+    All,
+    /// Only allow references to fields before the current
+    BeforeCurrent,
+    /// Only allow references to fields before the current and fields after as Some()
+    AfterCurrentAsSome,
+    /// Only allow references to fields before the current and fields after as None
+    AfterCurrentAsNone,
+}
+
 pub(crate) fn split_custom_attr(
     contents: &str,
-    fields: &syn::Fields,
+    fields: &Vec<&syn::Field>,
     cur_field_idx: usize,
     prefix: Option<&str>,
-    allow_all_fields:bool,
+    allow_field: AllowFields,
 ) -> Result<(proc_macro2::TokenStream, proc_macro2::TokenStream), Box<dyn std::error::Error>> {
     let mut fn_name = String::new();
     let mut field_names = Vec::new();
@@ -378,17 +362,38 @@ pub(crate) fn split_custom_attr(
 
     let mut valid_names = HashMap::with_capacity(fields.len());
     let mut sorted_names = Vec::with_capacity(fields.len());
+    let mut wrap_option = false;
+
     for (idx, field) in fields.iter().enumerate() {
         if idx == cur_field_idx {
-            if !allow_all_fields {
-                break;
-            } else {
-                continue;
+            match allow_field {
+                // Only fields before current are allowed, stop parsing
+                AllowFields::BeforeCurrent => break,
+                // Skip over current field and add fields after as options
+                AllowFields::AfterCurrentAsSome | AllowFields::AfterCurrentAsNone => {
+                    wrap_option = true;
+                    continue
+                }
+                AllowFields::All => continue,
             }
         }
         let simple_name = generate_field_name(field, idx, None, false).to_string();
+        let real_name = generate_field_name(field, idx, prefix, false);
+
         sorted_names.push(simple_name.clone());
-        valid_names.insert(simple_name, generate_field_name(field, idx, prefix, false));
+        
+        valid_names.insert(
+            simple_name, 
+            if wrap_option {
+                if let AllowFields::AfterCurrentAsNone = allow_field {
+                    quote!{None}
+                } else {
+                    quote!{Some(& #real_name)}
+                }
+            } else {
+                quote!{& #real_name}
+            }
+        );
     }
 
     let mut dependent_fields = proc_macro2::TokenStream::new();
@@ -397,7 +402,7 @@ pub(crate) fn split_custom_attr(
         match actual_name {
             Some(v) => {
                 dependent_fields.extend(quote! {
-                    &#v,
+                    #v,
                 });
             }
             None => {
@@ -410,4 +415,17 @@ pub(crate) fn split_custom_attr(
     }
 
     Ok((fn_name_ts, dependent_fields))
+}
+
+// Strip lifetimes from a type
+pub (crate) fn strip_lifetimes(ty: &syn::Type) -> syn::Type {
+    match ty {
+        syn::Type::Reference(r) => {
+            let t = r.elem.as_ref();
+            syn::parse(proc_macro::TokenStream::from(quote!{&#t})).unwrap()
+        }
+        _ => {
+            ty.clone()
+        }
+    }
 }

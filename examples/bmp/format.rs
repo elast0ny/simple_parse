@@ -4,15 +4,13 @@ use std::io::{Read, Write};
 #[derive(Debug, SpRead, SpWrite)]
 #[sp(endian = "little")] // The BMP format explicitely needs little endian
 pub struct BmpHeader {
-    #[sp(validate = "validate_magic_header")]
-    // Call `validate_magic_header()` with the contents of `magic`
+    #[sp(validate = "validate_magic_header")] // Call `validate_magic_header()` with the contents of `magic`
     pub magic: u16,
     pub size: u32,
     reserved1: u16,
     reserved2: u16,
     pixel_array_offset: u32,
-    #[sp(var_size)]
-    // We must tell simple_parse that this custom type has a variable size or this wont compile
+    #[sp(var_size)] // We must tell simple_parse that this custom type has a variable size or this wont compile
     dib: DIBHeader,
 }
 
@@ -20,8 +18,7 @@ pub struct BmpHeader {
 #[derive(Debug, SpRead, SpWrite)]
 #[sp(id_type = "u32", endian = "little")] // The header size is a u32
 pub enum DIBHeader {
-    // Only support BITMAPINFOHEADER for this toy example
-    #[sp(id = 40)]
+    #[sp(id = 40)] // Only support BITMAPINFOHEADER for this toy example which has a size of 40 bytes
     BitmapInfo {
         width: i32,
         height: i32,
@@ -35,13 +32,13 @@ pub enum DIBHeader {
         important: u32,
         // The logic for parsing the two fields bellow is complicated. We must use custom reader/writer
         #[sp(
-            reader="BitmapCompression::read, compression", // will generate : `self.compression_info = BitmapCompression::read(&compression, ...)?;`
-            writer="BitmapCompression::write"
+            reader="BitmapCompression::read, compression", // self.compression_info = BitmapCompression::read(&compression, ...)?;
+            writer="BitmapCompression::write"   // BitmapCompression::write(this: &BitmapCompression, ...)
         )]
         compression_info: BitmapCompression,
         #[sp(
             // Regular functions are also allowed
-            reader="parse_color_table, clr_used, compression_info, bit_count",
+            reader="parse_color_table, clr_used, compression_info, bit_count", // parse_color_table(clr_used: &u32, comp_info: &BitCompression, )
             writer="write_color_table"
         )]
         color_palette: Vec<RgbQuad>,
@@ -153,8 +150,14 @@ impl BitmapCompression {
     }
 }
 
-/// This function is called as soon as the magic u16 byte is read
-fn validate_magic_header(magic: &u16, _ctx: &mut SpCtx) -> Result<(), SpError> {
+/// This function is called when a magic header is read or about to be written
+fn validate_magic_header(magic: &u16, ctx: &mut SpCtx) -> Result<(), SpError> {
+    
+    // Allow writing invalid BMP headers for fun
+    if !ctx.is_reading {
+        return Ok(())
+    }
+    
     // BMP headers must start with two bytes containing B and M
     if *magic != 0x4D42 {
         Err(SpError::InvalidBytes)

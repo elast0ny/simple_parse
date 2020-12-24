@@ -87,9 +87,9 @@ pub (crate) fn generate_struct_hints(
     // Add up each field's static_size until we hit a variable size field
     for (idx, field) in fields.iter().enumerate() {
         //let field_name = &field.ident;
-        let field_type = &field.ty;
+        let field_type = strip_lifetimes(&field.ty);
         let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
-        let is_var_type = is_var_size(field_type, Some(&field_attrs));
+        let is_var_type = is_var_size(&field_type, Some(&field_attrs));
         
         // Keep adding sizes as long as we havent hit a dynamically sized field
         if !got_var {
@@ -101,7 +101,7 @@ pub (crate) fn generate_struct_hints(
             if field_attrs.reader.is_some() {
                 r.static_size.extend(quote!{0});
             } else {
-                r.static_size.extend(get_static_size(field_type));
+                r.static_size.extend(get_static_size(&field_type));
             }
             
             
@@ -114,21 +114,12 @@ pub (crate) fn generate_struct_hints(
         }
         
         // Add constant assertions to make sure we assume dyn/static properly
+        
         if is_var_type {
             got_var = true;
             if field_attrs.reader.is_none() {
-                let t = match field_type {
-                    // Remove lifetimes from references
-                    syn::Type::Reference(r) => {
-                        let t = r.elem.as_ref();
-                        quote!{&#t}
-                    }
-                    _ => {
-                        quote!{#field_type}
-                    }
-                };
                 r.const_asserts.extend(quote!{
-                    ::simple_parse::sa::const_assert!(<#t as ::simple_parse::SpOptHints>::IS_VAR_SIZE == true);
+                    ::simple_parse::sa::const_assert!(<#field_type as ::simple_parse::SpOptHints>::IS_VAR_SIZE == true);
                     
                 });
             }

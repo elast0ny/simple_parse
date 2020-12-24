@@ -19,6 +19,9 @@ pub use simple_parse_derive::*;
 pub struct SpCtx {
     /// How many bytes have been read/written so far
     pub cursor: usize,
+    /// This value should only be checked inside custom validators (which get called for both Read & Write)
+    /// Its contents are considered invalid otherwise
+    pub is_reading: bool,
     /// If the abitrary input/output bytes should be treated as little endian
     pub is_little_endian: bool,
     /// If a dynamically sized Self uses an external count field, and what its contents are
@@ -28,6 +31,7 @@ impl Default for SpCtx {
     fn default() -> Self {
         Self {
             cursor: 0,
+            is_reading: true,
             is_little_endian: cfg!(target_endian = "little"),
             count: None,
         }

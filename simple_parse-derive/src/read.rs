@@ -237,12 +237,44 @@ fn generate_fields_read(
     let mut static_size_code = TokenStream::new();
     let mut queued_read_code = TokenStream::new();
 
+    let fields: Vec<&syn::Field> = fields.iter().collect();
+
+    // holds the index of a field's count field
+    let mut count_field_idx = Vec::with_capacity(fields.len());
+    count_field_idx.resize(fields.len(), None);
+
+    let mut simple_field_names = Vec::with_capacity(fields.len());
+
+    // Iterate to link up content fields to their count field index
+    for (idx, field) in fields.iter().enumerate() {
+        let field_attrs: FieldAttributes = FromField::from_field(field).unwrap();
+        // save the simple field name for each field seen so far
+        simple_field_names.push(generate_field_name(field, idx, None, false).to_string());
+
+        if let Some(count_field_name) = field_attrs.count.as_ref() {
+            let mut found_idx = idx;
+            for i in 0..idx {
+                if count_field_name.as_str() == simple_field_names[i].as_str() {
+                    found_idx = i;
+                    break;
+                }
+            }
+            // count field not found
+            if found_idx == idx {
+                panic!("#[sp(count)] annotation on field '{}' referers to an unknown field '{}'. Valid values are {:?}", &simple_field_names[idx], count_field_name, &simple_field_names[..idx]);
+            }
+
+            // Save link from current field to count field
+            count_field_idx[idx] = Some(found_idx);
+        }
+    }
+
     for (idx, field) in fields.iter().enumerate() {
         let field_name = generate_field_name(field, idx, None, false);
         field_list.extend(quote! {#field_name,});
-        let field_type = &field.ty;
+        let field_type = strip_lifetimes(&field.ty);
         let field_attrs: FieldAttributes = FromField::from_field(field).unwrap();
-        let is_var_type = is_var_size(field_type, Some(&field_attrs));
+        let is_var_type = is_var_size(&field_type, Some(&field_attrs));
 
         // Get this field's endianness
         let is_input_le = match field_attrs.endian {
@@ -271,29 +303,25 @@ fn generate_fields_read(
             }
         }
 
-        // Get the count field
-        let count_field = match generate_count_field_name(&field_attrs.count, fields, None, true) {
-            None => {
-                quote! {
-                    None
-                }
-            }
-            Some(c) => {
-                quote! {Some(#c as _)}
-            }
-        };
+        // Get count field
+        let mut count_value = quote!{None};
+        if let Some(count_idx) = count_field_idx[idx] {
+            let count_field_name = generate_field_name(&fields[count_idx], count_idx, None, true);
+            count_value = quote!{Some(#count_field_name as _)};
+        }
 
         // Get custom validator
         let validate_call = match field_attrs.validate {
             Some(ref s) => {
-                let (fn_name, other_fields) = match split_custom_attr(s, &fields, idx, None, false) {
+                let (fn_name, other_fields) = match split_custom_attr(s, &fields, idx, None, AllowFields::AfterCurrentAsNone) {
                     Ok(v) => v,
                     Err(e) => {
-                        panic!("Invalid custom validator for field '{}', {}",field_name.to_string(), e);
+                        panic!("Invalid custom validator for field '{}', {}", &simple_field_names[idx], e);
                     }
                 };
                 quote!{
-                    #fn_name(&#field_name, #other_fields ctx)?;
+                    ctx.is_reading = true;
+                    #fn_name(&mut #field_name, #other_fields ctx)?;
                 }
             },
             None => TokenStream::new()
@@ -302,10 +330,10 @@ fn generate_fields_read(
         // Get custom reader if provided
         let read_call = match field_attrs.reader {
             Some(ref s) => {
-                let (fn_name, dependent_fields) = match split_custom_attr(s, &fields, idx, None, false) {
+                let (fn_name, dependent_fields) = match split_custom_attr(s, &fields, idx, None, AllowFields::BeforeCurrent) {
                     Ok(v) => v,
                     Err(e) => {
-                        panic!("Invalid custom reader for field '{}', {}",field_name.to_string(), e);
+                        panic!("Invalid custom reader for field '{}', {}", &simple_field_names[idx], e);
                     }
                 };
                 quote!{
@@ -323,18 +351,23 @@ fn generate_fields_read(
 
         queued_read_code.extend(quote! {
             ctx.is_little_endian = #is_input_le;
-            ctx.count = #count_field;
-            let #field_name: #field_type = #read_call?;
+            ctx.count = #count_value;
+            let mut #field_name: #field_type = #read_call?;
             #validate_call
         });
 
         if is_var_type || idx + 1 == num_fields {
             if hit_first_dyn && num_summed_sizes > 0 {
                 let (stack_var, validate_static_size) =
-                    generate_validate_size_code(&quote! {#static_size_code}, &reader_type);
+                    generate_validate_size_code(&quote! {static_size}, &reader_type);
                 read_code.extend(quote! {
                     #stack_var
-                    #validate_static_size
+                    {
+                        const static_size: usize = #static_size_code;
+                        if static_size > 0 {
+                            #validate_static_size
+                        }
+                    }
                 });
 
                 num_summed_sizes = 0;
