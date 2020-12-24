@@ -399,16 +399,17 @@ macro_rules! mutref_from_ptr {
 
         #[cfg(feature = "verbose")]
         crate::debug!(
-            "[0x{:X}] : 0x{:0width$X} [{}]",
+            "[0x{:X}] : *{:p} = 0x{:0width$X} [{}]",
             $ctx.cursor,
+            $checked_bytes,
             std::ptr::read_unaligned($checked_bytes as *mut $as_typ),
             stringify!($typ),
             width = std::mem::size_of::<$as_typ>() * 2
         );
 
         // Make sure to only make references to properly aligned pointers
-        if std::mem::align_of::<$typ>() > 1
-            && $checked_bytes.align_offset(std::mem::align_of::<$typ>()) != 0
+        if std::mem::align_of::<$as_typ>() > 1
+            && $checked_bytes.align_offset(std::mem::align_of::<$as_typ>()) != 0
         {
             return Err(SpError::BadAlignment);
         }
@@ -416,7 +417,8 @@ macro_rules! mutref_from_ptr {
         $ctx.cursor += std::mem::size_of::<$as_typ>();
 
         // Convert pointer to Rust reference
-        Ok(&mut *($checked_bytes as *mut $typ) as _)
+        let r: $typ = &mut *($checked_bytes as *mut $as_typ as *mut _);
+        Ok(r)
     }};
 }
 /// Copies a bool from a raw pointer
