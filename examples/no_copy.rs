@@ -1,7 +1,6 @@
 /**
  * Demonstrates the use of simple_parse's no-copy capabilities
  */
-
 use ::simple_parse::{SpOptHints, SpReadRaw, SpWrite};
 
 // You must derive SpOptHints manualy when not using SpRead
@@ -25,19 +24,27 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Print the address of each field's references
     println!("File {{");
-    println!("\tfilename: 0x{:p} [{}]", f.filename.as_ptr(), f.filename.len());
-    println!("\tcontents: 0x{:p} [{}]", f.contents.as_ptr(), f.contents.len());
+    println!(
+        "\tfilename: 0x{:p} [{}]",
+        f.filename.as_ptr(),
+        f.filename.len()
+    );
+    println!(
+        "\tcontents: 0x{:p} [{}]",
+        f.contents.as_ptr(),
+        f.contents.len()
+    );
     println!("}}");
 
     /*
      * Prints to STDOUT something like :
-     * 
+     *
      *      Data starts at 0x0x55d14fae3ba0
      *      File {
      *          filename: 0x0x55d14fae3ba4 [48]
      *          contents: 0x0x55d14fae3bd8 [4096]
      *      }
-     * 
+     *
      * The result struct points directly into the input data
      */
 

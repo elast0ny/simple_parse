@@ -28,7 +28,12 @@ macro_rules! impl_primitive {
     };
     // When no converter to ref and slice is provided, default to using primitve impls
     ($typ:ty as $as_typ:ty, $as_copy:ident) => {
-        impl_primitive!($typ as $as_typ, $as_copy, mutref_from_ptr, mutslice_from_cursor);
+        impl_primitive!(
+            $typ as $as_typ,
+            $as_copy,
+            mutref_from_ptr,
+            mutslice_from_cursor
+        );
     };
     // Implements SpReadRaw & SpReadRawMut for T, &T, &mut T, &[T] and &mut [T]
     ($typ:ty as $as_typ:ty, $as_copy:ident, $as_ref:ident, $as_slice:ident) => {
@@ -51,10 +56,7 @@ macro_rules! mutslice_from_cursor {
         // Dont use checked_bytes if count is provided
         let count: usize = match $ctx.count {
             Some(c) => c,
-            None => {
-                <DefaultCountType>::$unchecked_reader($checked_bytes, $src, $ctx)?
-                    as _
-            }
+            None => <DefaultCountType>::$unchecked_reader($checked_bytes, $src, $ctx)? as _,
         };
 
         // Make sure theres enough bytes for count * item_size
@@ -134,27 +136,85 @@ macro_rules! nonzeroslice_from_ptr {
         }
 
         // Convert to NonZeroT slice from &[T]
-        let nz_slice = std::slice::from_raw_parts_mut(
-            prim_slice.as_ptr() as *mut _,
-            prim_slice.len()
-        );
+        let nz_slice =
+            std::slice::from_raw_parts_mut(prim_slice.as_ptr() as *mut _, prim_slice.len());
 
         Ok(nz_slice)
     }};
 }
 
-impl_primitive!(NonZeroU8 as u8, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
-impl_primitive!(NonZeroU16 as u16, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
-impl_primitive!(NonZeroU32 as u32, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
-impl_primitive!(NonZeroU64 as u64, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
-impl_primitive!(NonZeroU128 as u128, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
-impl_primitive!(NonZeroUsize as usize, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
-impl_primitive!(NonZeroI8 as i8, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
-impl_primitive!(NonZeroI16 as i16, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
-impl_primitive!(NonZeroI32 as i32, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
-impl_primitive!(NonZeroI64 as i64, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
-impl_primitive!(NonZeroI128 as i128, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
-impl_primitive!(NonZeroIsize as isize, nonzero_from_ptr, nonzeroref_from_ptr, nonzeroslice_from_ptr);
+impl_primitive!(
+    NonZeroU8 as u8,
+    nonzero_from_ptr,
+    nonzeroref_from_ptr,
+    nonzeroslice_from_ptr
+);
+impl_primitive!(
+    NonZeroU16 as u16,
+    nonzero_from_ptr,
+    nonzeroref_from_ptr,
+    nonzeroslice_from_ptr
+);
+impl_primitive!(
+    NonZeroU32 as u32,
+    nonzero_from_ptr,
+    nonzeroref_from_ptr,
+    nonzeroslice_from_ptr
+);
+impl_primitive!(
+    NonZeroU64 as u64,
+    nonzero_from_ptr,
+    nonzeroref_from_ptr,
+    nonzeroslice_from_ptr
+);
+impl_primitive!(
+    NonZeroU128 as u128,
+    nonzero_from_ptr,
+    nonzeroref_from_ptr,
+    nonzeroslice_from_ptr
+);
+impl_primitive!(
+    NonZeroUsize as usize,
+    nonzero_from_ptr,
+    nonzeroref_from_ptr,
+    nonzeroslice_from_ptr
+);
+impl_primitive!(
+    NonZeroI8 as i8,
+    nonzero_from_ptr,
+    nonzeroref_from_ptr,
+    nonzeroslice_from_ptr
+);
+impl_primitive!(
+    NonZeroI16 as i16,
+    nonzero_from_ptr,
+    nonzeroref_from_ptr,
+    nonzeroslice_from_ptr
+);
+impl_primitive!(
+    NonZeroI32 as i32,
+    nonzero_from_ptr,
+    nonzeroref_from_ptr,
+    nonzeroslice_from_ptr
+);
+impl_primitive!(
+    NonZeroI64 as i64,
+    nonzero_from_ptr,
+    nonzeroref_from_ptr,
+    nonzeroslice_from_ptr
+);
+impl_primitive!(
+    NonZeroI128 as i128,
+    nonzero_from_ptr,
+    nonzeroref_from_ptr,
+    nonzeroslice_from_ptr
+);
+impl_primitive!(
+    NonZeroIsize as isize,
+    nonzero_from_ptr,
+    nonzeroref_from_ptr,
+    nonzeroslice_from_ptr
+);
 
 /* String types */
 
@@ -189,7 +249,6 @@ impl_readrawmut!(String, string_from_cursor);
 /// Returns a &CStr from a Cursor<[u8]>
 macro_rules! cstr_from_cursor {
     ($typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
-
         if *$checked_bytes == 0 {
             $ctx.cursor += 1;
             let s = std::slice::from_raw_parts($checked_bytes, 1);
@@ -202,10 +261,7 @@ macro_rules! cstr_from_cursor {
         while num_bytes < bytes_left {
             $ctx.cursor += 1;
             #[cfg(feature = "verbose")]
-            crate::debug!(
-                "Check src.len({}) < 1",
-                bytes_left
-            );
+            crate::debug!("Check src.len({}) < 1", bytes_left);
             num_bytes += 1;
             if *$checked_bytes.add(num_bytes as usize) == 0 {
                 let s = std::slice::from_raw_parts($checked_bytes, (num_bytes + 1) as usize);

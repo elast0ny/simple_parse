@@ -26,9 +26,9 @@ pub struct SpCtx {
 }
 impl Default for SpCtx {
     fn default() -> Self {
-        Self{
+        Self {
             cursor: 0,
-            is_little_endian: cfg!(target_endian="little"),
+            is_little_endian: cfg!(target_endian = "little"),
             count: None,
         }
     }
@@ -64,7 +64,7 @@ pub unsafe trait SpOptHints {
 /// When possible, it is recommend to use [SpReadRaw] instead for better performance.
 pub trait SpRead {
     /// Converts bytes from a [Reader](std::io::Read) into `Self`
-    /// 
+    ///
     /// This functions allows specifying endianness and count fields as opposed to using defaults with `from_reader`
     fn inner_from_reader<R: Read + ?Sized>(
         src: &mut R,
@@ -93,17 +93,14 @@ pub trait SpRead {
     where
         Self: Sized + SpOptHints,
     {
-        Self::inner_from_reader(
-            src,
-            &mut SpCtx::default(),
-        )
+        Self::inner_from_reader(src, &mut SpCtx::default())
     }
 }
 
 /// Parses `Self` from a [Cursor<&\[u8\]>](std::io::Cursor)
 pub trait SpReadRaw<'b> {
     /// Converts bytes from a `Cursor<&[u8]>` into `Self`
-    /// 
+    ///
     /// This functions allows specifying endianness and count fields as opposed to using defaults with `from_slice`
     fn inner_from_slice(
         src: &mut Cursor<&'b [u8]>,
@@ -119,7 +116,7 @@ pub trait SpReadRaw<'b> {
     ///
     /// If this is implemented on a dynamic type, the implementors MUST check if count is provided.
     /// If it is provided, Self::COUNT_SIZE less bytes can be trusted from checked_bytes.
-    /// 
+    ///
     /// This function also allows returning references into the `Cursor<&[u8]>` when `Self` is a reference `&T`.
     /// This should not be done if `Self` itself contains non-primitive types, references, slices, etc...
     unsafe fn inner_from_slice_unchecked(
@@ -142,7 +139,7 @@ pub trait SpReadRaw<'b> {
 /// Parses `Self` from a [Cursor<&mut \[u8\]>](std::io::Cursor)
 pub trait SpReadRawMut<'b> {
     /// Converts bytes from a `Cursor<&mut [u8]>` into `Self`
-    /// 
+    ///
     /// This functions allows specifying endianness and count fields as opposed to using defaults with `from_slice`
     fn inner_from_mut_slice(
         src: &mut Cursor<&'b mut [u8]>,
@@ -158,7 +155,7 @@ pub trait SpReadRawMut<'b> {
     ///
     /// If this is implemented on a dynamic type, the implementors MUST check if count is provided.
     /// If it is provided, Self::COUNT_SIZE less bytes can be trusted from checked_bytes.
-    /// 
+    ///
     /// This function also allows returning references into the `Cursor<&[u8]>` when `Self` is a reference `&T` or `&mut T`.
     /// This should not be done if `Self` itself contains non-primitive types, references, slices, etc...
     unsafe fn inner_from_mut_slice_unchecked(

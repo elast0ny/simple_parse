@@ -1,18 +1,16 @@
-
+use ::env_logger::Builder;
+use simple_parse::{SpRead, SpWrite};
 /**
  * This example is for those who are currious to see what kind of code simple_parse generates.
  * Run this example with :
  *      RUST_LOG=debug cargo run --example inspect --features verbose
  * To see everytime a read() call would be performed on the [socket|file|etc...]
- * 
+ *
  * Or run with :
  *      RUST_LOG=debug cargo run --example inspect --features verbose --features print-generated
  * To get a dump of the actual parsing code that got generated
- */  
-
+ */
 use std::io::{Cursor, Write};
-use ::env_logger::Builder;
-use simple_parse::{SpRead, SpWrite};
 
 #[derive(Debug, SpRead, SpWrite)]
 pub enum Message {
@@ -20,8 +18,7 @@ pub enum Message {
         // simple_parse does not know about LoginInfo while generating code for `enum Message`
         // We must explicitly say that it is variably sized (because it contains a variably sized type)
         // Or else compilation will fail
-        #[sp(var_size)]
-        LoginInfo,
+        #[sp(var_size)] LoginInfo,
     ),
     Logout(u16, u16),
     Chat(String),
@@ -117,7 +114,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /***
  * EXAMPLE STDOUT
- * 
+ *
 Original Bytes == [0, 4, 1, C0, FE, 54, 6F, 6E, 79, 3, 0, 0, 0, 61, 62, 63, 2, 5, 0, 0, 0, 48, 65, 6C, 6C, 6F, 3, 6, 0, 0, 0, 68, 69, 2E, 74, 78, 74, 0, 0, 0, 0, 0]
 Message {
     IS_VAR_SIZE: true

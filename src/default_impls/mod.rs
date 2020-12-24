@@ -310,7 +310,7 @@ macro_rules! prim_to_writer {
             Ok(v) => {
                 $ctx.cursor += v;
                 Ok(v)
-            },
+            }
             Err(_) => Err(SpError::NotEnoughSpace),
         }
     }};
@@ -392,7 +392,10 @@ macro_rules! mutref_from_ptr {
     ($typ:ty as $as_typ:ty, $reader:ident, $unchecked_reader:ident, $checked_bytes:ident, $src:expr, $ctx:ident) => {{
         let _ = $src;
         // Make sure we never accidentaly cast between invalid types
-        crate::sa::const_assert_eq!(std::mem::align_of::<$typ>(), std::mem::align_of::<&$as_typ>());
+        crate::sa::const_assert_eq!(
+            std::mem::align_of::<$typ>(),
+            std::mem::align_of::<&$as_typ>()
+        );
 
         #[cfg(feature = "verbose")]
         crate::debug!(

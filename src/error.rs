@@ -18,9 +18,7 @@ pub enum SpError {
 impl fmt::Display for SpError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            SpError::UnknownEnumVariant => {
-                write!(f, "Encountered invalid enum variant ID")
-            }
+            SpError::UnknownEnumVariant => write!(f, "Encountered invalid enum variant ID"),
             SpError::NotEnoughSpace => {
                 write!(f, "Not enough bytes in the buffer to parse wanted type")
             }
