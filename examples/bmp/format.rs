@@ -4,8 +4,8 @@ use std::io::{Read, Write};
 #[derive(Debug, SpRead, SpWrite)]
 #[sp(endian = "little")] // The BMP format forces little endian
 pub struct BmpHeader {
-    pub magic1: u8,
-    pub magic2: u8,
+    #[sp(validate="validate_magic_header")]
+    pub magic: u16,
     pub size: u32,
     reserved1: u16,
     reserved2: u16,
@@ -132,6 +132,17 @@ impl BitmapCompression {
                 Ok(12)
             },
         }
+    }
+}
+
+
+/// This function is called as soon as the magic u16 byte is read
+fn validate_magic_header(magic: &u16, _ctx: &mut SpCtx) -> Result<(), SpError> {
+    // BMP headers must start with two bytes containing B and M
+    if *magic != 0x4D42 {
+        Err(SpError::InvalidBytes)
+    } else {
+        Ok(())
     }
 }
 

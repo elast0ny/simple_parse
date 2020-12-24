@@ -33,27 +33,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Open file
     let file_path: &str = matches.value_of("fpath").unwrap();
     let mut file = std::fs::File::open(file_path).expect("Failed to read input file");
-    // get filesize
-    let file_size = file.metadata()?.len();
 
     // Parse bmp header
     let header = BmpHeader::from_reader(&mut file).expect("Failed to read header");
-
-    // BMP should start with 'BM'
-    if header.magic1 != b'B' || header.magic2 != b'M' {
-        return Err(From::from(format!(
-            "Invalid BMP magic header: {:X}{:X}",
-            header.magic1, header.magic2
-        )));
-    }
-
-    // Filesizes should match
-    if header.size as u64 != file_size {
-        return Err(From::from(format!(
-            "Header filesize doesnt match real file size : {:X} != {:X}",
-            header.size, file_size
-        )));
-    }
 
     // Print parsed values
     println!("{:?}", header);

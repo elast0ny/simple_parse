@@ -283,6 +283,22 @@ fn generate_fields_read(
             }
         };
 
+        // Get custom validator
+        let validate_call = match field_attrs.validate {
+            Some(ref s) => {
+                let (fn_name, other_fields) = match split_custom_attr(s, &fields, idx, None, false) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        panic!("Invalid custom validator for field '{}', {}",field_name.to_string(), e);
+                    }
+                };
+                quote!{
+                    #fn_name(&#field_name, #other_fields ctx)?;
+                }
+            },
+            None => TokenStream::new()
+        };
+
         // Get custom reader if provided
         let read_call = match field_attrs.reader {
             Some(ref s) => {
@@ -309,6 +325,7 @@ fn generate_fields_read(
             ctx.is_little_endian = #is_input_le;
             ctx.count = #count_field;
             let #field_name: #field_type = #read_call?;
+            #validate_call
         });
 
         if is_var_type || idx + 1 == num_fields {
