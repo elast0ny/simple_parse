@@ -64,7 +64,7 @@ In vague order of priority, `simple_parse` aims to provide :
 
 In other words, `simple_parse` will try to generate the most performant code while never compromising on safety.
 
-Secondly, it also prioritize ease of use by providing default implementations that work well in most cases while also allowing __some__ customisation to accomodate for binary formats we cannot control.
+Secondly, it also prioritize ease of use by providing default implementations that work well in most cases while also allowing *some* customisation to accomodate for binary formats we cannot control.
 
 ## License
 
