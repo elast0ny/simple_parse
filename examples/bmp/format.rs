@@ -153,6 +153,7 @@ impl BitmapCompression {
 /// This function is called when a magic header is read or about to be written
 fn validate_magic_header(magic: &u16, ctx: &mut SpCtx) -> Result<(), SpError> {
     
+    println!("Validating magic bmp header !!");
     // Allow writing invalid BMP headers for fun
     if !ctx.is_reading {
         return Ok(())
