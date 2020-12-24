@@ -26,9 +26,11 @@ macro_rules! impl_static {
         }
         unsafe impl SpOptHints for &[$typ] {
             const STATIC_SIZE: usize = DefaultCountType::STATIC_SIZE;
+            const COUNT_SIZE: usize = DefaultCountType::STATIC_SIZE;
         }
         unsafe impl SpOptHints for &mut [$typ] {
             const STATIC_SIZE: usize = DefaultCountType::STATIC_SIZE;
+            const COUNT_SIZE: usize = DefaultCountType::STATIC_SIZE;
         }
     };
 }
