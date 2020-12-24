@@ -118,7 +118,8 @@ macro_rules! nonzeroref_from_ptr {
             return Err(SpError::InvalidBytes);
         }
 
-        Ok(&mut *(prim_ref as *const $as_typ as *mut $as_typ as *mut _))
+        let r: $typ = &mut *(prim_ref as *const $as_typ as *mut $as_typ as *mut _);
+        Ok(r)
     }};
 }
 

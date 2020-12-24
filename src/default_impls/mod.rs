@@ -416,7 +416,7 @@ macro_rules! mutref_from_ptr {
         $ctx.cursor += std::mem::size_of::<$as_typ>();
 
         // Convert pointer to Rust reference
-        Ok(&mut *($checked_bytes as *mut $typ))
+        Ok(&mut *($checked_bytes as *mut $typ) as _)
     }};
 }
 /// Copies a bool from a raw pointer

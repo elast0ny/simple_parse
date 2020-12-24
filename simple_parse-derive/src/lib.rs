@@ -303,7 +303,7 @@ pub(crate) fn get_static_size(typ: &Type) -> proc_macro2::TokenStream {
             <::simple_parse::DefaultCountType as ::simple_parse::SpOptHints>::STATIC_SIZE
         }
     } else if field_ty.contains('<') {
-        panic!("Generic type '{}' cannot be used as a field because Rust currently does not handle const generics properly (Required for SpOptHints::STATIC_SIZE)");
+        panic!("Generic type '{}' cannot be used as a field because Rust currently does not handle const generics properly (Required for SpOptHints::STATIC_SIZE)", field_ty);
     } else {
         quote! {
             <#typ as ::simple_parse::SpOptHints>::STATIC_SIZE
@@ -330,7 +330,7 @@ pub(crate) fn split_custom_attr(
 
         // Try to catch invalid values early. Anything missed here should cause a compilation error at the call site anyway
         // Air on the strict side here, only allow alphanumeric, ':', '_' or '-'
-        if cleaned.len() == 0 {
+        if cleaned.is_empty() {
             return Err(From::from(format!("{} is empty", cur_item)));
         }
         
@@ -338,9 +338,7 @@ pub(crate) fn split_custom_attr(
             if idx == 0 && ch == ':' {
                 got_path = true;
                 continue;
-            } else if ch == '_' || ch == '-' {
-                continue;
-            } else if ch.is_alphanumeric() {
+            } else if ch == '_' || ch == '-' || ch.is_alphanumeric() {
                 continue;
             }
 
