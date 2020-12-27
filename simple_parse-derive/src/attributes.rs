@@ -64,20 +64,30 @@ pub(crate) struct FieldAttributes {
     #[darling(default)]
     pub count: Option<String>,
 
-    /// Allows for custom validation code to run directly after parsing a field.
-    /// The provided String will be parsed as a comma seperated function name optionnaly followed by field names that have already been populated.
-    /// This functions first parameter will always be a mutable reference to the field it annotates.
+    /// Allows for custom validation code to run directly after parsing or before writing a field.
+    /// The provided value will be parsed as a comma seperated function name optionnaly followed by field names.
+    /// When reading, any reference to fields __after__ the current field will be passed as `None` as their contents have not yet been parsed.
+    /// When writing, any reference to fields __after__ the current field will be passed as `Some(&T)`.
+    /// 
+    /// This functions first parameter will always be a reference to the field it annotates.
     /// For example :
     /// ```Rust
     ///     struct MyStruct {
     ///         some_field: bool,
-    ///         #[sp(validate="validate_magic")]
-    ///         magic_value: u32
-    ///         //Parsing will stop if validate_magic() returns Err()
+    ///         #[sp(validate="validate_magic, some_field")]
+    ///         magic_value: u32    
+    ///         field_after: String,
     ///     }
     /// ```
-    /// Will end up generating code that calls a function with signature :
-    ///     fn validate_magic(this: &mut u32, ctx: &mut SpCtx) -> Result<(), SpError>
+    /// The `validate_magic` function must have a signature :
+    ///     fn validate_magic(this: &u32, some_field: &bool, field_after: Option<&String>, ctx: &mut SpCtx) -> Result<(), SpError>
+    ///
+    ///     When called as part of a Read :
+    ///         ctx.is_reading = true;
+    ///         validate_magic(&magic_value, &some_field, None, ctx)?;
+    ///     When called as part of a Write :
+    ///         ctx.is_reading = false;
+    ///         validate_magic(&self.magic_value, &self.some_field, Some(self.field_after), ctx)?;
     #[darling(default)]
     pub validate: Option<String>,
 
@@ -92,7 +102,7 @@ pub(crate) struct FieldAttributes {
     ///     }
     /// ```
     /// Will end up generating code that calls a function with signature :
-    ///     fn custom_parser(some_field: &bool, src: CustomSrc, ctx: &mut SpCtx) -> Result<T, SpError>
+    ///     fn custom_parser(some_field: &bool, src: &mut Read, ctx: &mut SpCtx) -> Result<T, SpError>
     #[darling(default)]
     pub reader: Option<String>,
     
@@ -118,6 +128,8 @@ pub(crate) struct FieldAttributes {
     pub endian: Option<String>,
 
     /// Specifies whether this field's type is variably sized
+    /// 
+    /// This should only be required when a custom type has a variable size.
     #[darling(default)]
     pub var_size: Option<()>
 }

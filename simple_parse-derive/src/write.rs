@@ -67,6 +67,10 @@ fn generate_fields_write(
     let mut count_field_vals = Vec::with_capacity(fields.len());
     count_field_vals.resize(fields.len(), None);
 
+    // Holds the index of a count field's index
+    let mut count_field_idx = Vec::with_capacity(fields.len());
+    count_field_idx.resize(fields.len(), None);
+
     let mut simple_field_names = Vec::with_capacity(fields.len());
     let fields: Vec<&syn::Field> = fields.iter().collect();
 
@@ -96,23 +100,26 @@ fn generate_fields_write(
         };
 
         if let Some(count_field_name) = field_attrs.count.as_ref() {
-            let mut count_field_idx = idx;
+            let mut field_idx = idx;
             for i in 0..idx {
                 if count_field_name.as_str() == simple_field_names[i].as_str() {
-                    count_field_idx = i;
+                    field_idx = i;
                     break;
                 }
             }
             // count field not found
-            if count_field_idx == idx {
+            if field_idx == idx {
                 panic!("#[sp(count)] annotation on field '{}' referers to an unknown field '{}'. Valid values are {:?}", &simple_field_names[idx], count_field_name, &simple_field_names[..idx]);
             }
 
             // Save link from count field to this field
-            count_field_vals[count_field_idx] = Some(idx);
+            count_field_vals[field_idx] = Some(idx);
+            // Save link from this field to its count field
+            count_field_idx[idx] = Some(field_idx);
         }
     }
     
+    let mut got_count = false;
     // Generate write call for every field
     for (idx, field) in fields.iter().enumerate() {
         let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
@@ -127,38 +134,68 @@ fn generate_fields_write(
         let is_output_le = match field_attrs.endian {
             None => default_is_le,
             Some(ref e) => is_lower_endian(e),
-        };
+        }; 
 
-        let count_value = if field_attrs.count.is_none() {
-            quote!{None}
-        } else {
-            // TODO : put the actual value of the count field in question
-            quote!{Some(0)}
-        };
+        let count_value;
 
         // If this field is a count field, write the len instead
-        if let Some(content_field_idx) = count_field_vals[idx] {
-            let content_field = fields[content_field_idx];
-            let content_ident = generate_field_name(content_field, content_field_idx, prefix, false);
-
-            let count_type = if let ::syn::Type::Reference(ty) = &field.ty {
-                let t = &ty.elem;
-                quote!{#t}
-            } else {
-                let t = &field.ty;
-                quote!{#t}
-            };
+        if let Some(field_idx) = count_field_vals[idx] {
+            let content_field = fields[field_idx];
+            let content_ty = strip_reference(&content_field.ty);
+            let content_ident = generate_field_name(content_field, field_idx, prefix, false);
             
-            // TODO : Add special case so we dont call .len() on Option
+            let count_ident = generate_field_name(field, idx, None, false);
+            let count_type = strip_reference(&field.ty);
+
+            if !got_count {
+                got_count = true;
+                write_code.extend(quote!{
+                    use std::convert::TryInto;
+                });
+            }
+
+            let content_ty_str = quote!{#content_ty}.to_string();
+            let count_ty_str = quote!{#count_type}.to_string();
+            let count_decl = 
+            if content_ty_str.starts_with("Option <") {
+                if count_ty_str == "bool" {
+                    quote!{
+                        let #count_ident: #count_type = #content_ident.is_some();
+                    }
+                } else {
+                    quote!{
+                        let #count_ident: #count_type = if #content_ident.is_some() {
+                            1
+                        } else {
+                            0
+                        };
+                    }
+                }
+            } else {
+                quote!{
+                    let #count_ident: #count_type = match #content_ident.len().try_into() {
+                        Ok(v) => v,
+                        Err(e) => return Err(::simple_parse::SpError::CountFieldOverflow),
+                    };
+                }
+            };
+            // Create temporary var to hold the real count value
+            // then write this value
             write_code.extend(quote! {
-                let _f: #count_type = match #content_ident.len().try_into() {
-                    Ok(v) => v,
-                    Err(e) => return Err(::simple_parse::SpError::CountFieldOverflow),
-                };
+                #count_decl
                 ctx.is_little_endian = #is_output_le;
-                written_len += _f.inner_to_writer(ctx, dst)?;
+                written_len += #count_ident.inner_to_writer(ctx, dst)?;
             });
             continue;
+        } else if let Some(field_idx) = count_field_idx[idx] {
+            // The current field is annotated with count.
+            // Pass the count field's value as Some to its `inner_to_writer()`
+            let count_field = fields[field_idx];
+            let count_ident = generate_field_name(count_field, field_idx, None, false);
+            count_value = quote!{Some(#count_ident as usize)};
+        } else {
+            // current field is not annotated with count
+            count_value = quote!{None};
         }
 
         // Pick between custom write or default

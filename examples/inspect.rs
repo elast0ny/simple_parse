@@ -16,9 +16,10 @@ use std::io::{Cursor, Write};
 pub enum Message {
     ClientLogin(
         // simple_parse does not know about LoginInfo while generating code for `enum Message`
-        // We must explicitly say that it is variably sized (because it contains a variably sized type)
+        // We must explicitly declare that it is variably sized (because it contains a variably sized type)
         // Or else compilation will fail
-        #[sp(var_size)] LoginInfo,
+        #[sp(var_size)]
+        LoginInfo,
     ),
     Logout(u16, u16),
     Chat(String),
@@ -38,6 +39,9 @@ pub struct LoginInfo {
     #[sp(count = "username_len")] // The length of `username` is the u8 field `username_len`
     username: String,
     password: String,
+    got_session: bool,
+    #[sp(count="got_session")]
+    session: Option<u32>,
 }
 
 macro_rules! dump_optimization_hints {
@@ -67,6 +71,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         b'T', b'o', b'n', b'y', // username
         0x03, 0, 0, 0, // password length
         b'a', b'b', b'c', // password
+        0x00, // None
         0x02, // 3rd variant (Chat)
         0x05, 0, 0, 0, b'H', b'e', b'l', b'l', b'o', // Chat(message)
         0x03, // 4th variant (File)

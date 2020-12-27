@@ -429,3 +429,13 @@ pub (crate) fn strip_lifetimes(ty: &syn::Type) -> syn::Type {
         }
     }
 }
+
+// Strip reference symbol from a type
+pub (crate) fn strip_reference(ty: &syn::Type) -> syn::Type {
+    if let ::syn::Type::Reference(t) = &ty {
+        let elem = &t.elem;
+        elem.as_ref().clone()
+    } else {
+        ty.clone()
+    }
+}

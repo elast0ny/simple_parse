@@ -76,9 +76,8 @@ pub(crate) fn generate(
     let (_impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     // TODO When deriving a generic type, we run into const generic issues when using Self::STATIC_SIZE.
-    //      We could check whether the type has generics and instead of using STATIC_SIZE
-    //      directly, we can call opt_hint.rs' generate functions to use the same expresion
-    //      as it generated for the Self::STATIC_SIZE...
+    //      We could check whether the type has generics and instead of using Self::STATIC_SIZE
+    //      directly, we can use opt_hint.rs's generated STATIC_SIZE code ?
     let (stack_var, static_validation_code) =
         generate_validate_size_code(&quote! {<#name as ::simple_parse::SpOptHints>::STATIC_SIZE}, &reader_type);
 
