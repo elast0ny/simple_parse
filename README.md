@@ -66,6 +66,70 @@ In other words, `simple_parse` will try to generate the most performant code whi
 
 Secondly, priority will be given to ease of use by providing default implementations that work well in most cases while also allowing *some* customisation to accomodate for binary formats we cannot control (see the bmp image parsing [example](examples/bmp/)).
 
+## Advanced Usage
+`simple_parse` provides a few ways to enhance the generate parsing code. See [attributes.rs](simple_parse-derive/src/attributes.rs) for an exhaustive list of options.
+### __Validation__
+It is possible to insert validation "hooks" at any point in the parsing/writing process.
+
+For example, BMP image headers must always start with the two first bytes being `'BM'` :
+```Rust
+#[derive(SpRead, SpWrite)]
+struct BmpHeader {
+    #[sp(validate = "validate_header")]
+    magic: u16,
+    size: u32,
+    reserved1: u16,
+    reserved2: u16,
+    pixel_array_offset: u32,
+    // ...
+```
+(Taken from [bmp example](examples/bmp/main.rs))
+
+This tells `simple_parse` to insert a call to `validate_header(magic: &u16, ctx: &mut SpCtx)` directly after having populated the `u16` when reading and before dumping the struct as bytes when writing.
+
+### __Custom Length (for TLV style)__
+`simple_parse` provides default implementations for dynamically sized types by simply prepending the number of elements (`count`) followed by the elements.
+
+i.e. A Vec<u8> with three values turns into :
+```Rust
+// [count] | [count] * [elements]
+[3u32][val1][val2][val3]
+```
+When parsing binary formats that dont follow this layout, you can annotate your dynamically sized field with `count` :
+```Rust
+pub struct File {
+    pub content_len: u16,
+    pub filename: String, // Use the default prepended count
+    #[sp(count="content_len")]
+    pub contents: Vec<u8>, // Use an existing field as the count
+```
+The `content_len` field will be used to populate `contents` and `contents.len()` will be written at that offset when writing.
+### __Custom Read/Write__
+When `simple_parse`'s default reading and writing implementations are not well suited for your formats, you can override them with the `reader` and `writer` attributes.
+```Rust
+struct BmpHeader {
+    comp_bitmask: u32,
+    #[sp(
+        reader="BmpComp::read, comp_bitmask",
+        writer="BmpComp::write",
+    )]
+    compression_info: BmpComp,
+    //...
+```
+When reading, this will generate code like :
+
+```Rust
+compression_info = BmpComp::read(comp_bitmask: &u32, src: &mut Read, ctx: &mut SpCtx)?;
+```
+
+And when writing :
+
+```Rust
+written_sz += BmpComp::write(&self.compression_info, ctx: &mut SpCtx, dst: &mut Write)?;
+```
+
+Note : Using `reader` will generate suboptimal parsing code as `simple_parse` cannot make any assumptions about the custom `reader`'s impact on the input bytes.
+
 ## License
 
  * [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0)
