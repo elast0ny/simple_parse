@@ -1,24 +1,45 @@
-use simple_parse::{validate_reader_exact, SpCtx, SpError, SpRead, SpWrite};
+use simple_parse::*;
 use std::io::{Read, Write};
 
-#[derive(Debug, SpRead, SpWrite)]
+#[derive(SpRead, SpWrite)]
 #[sp(endian = "little")] // The BMP format explicitely needs little endian
 pub struct BmpHeader {
-    #[sp(validate = "validate_magic_header")] // Call `validate_magic_header()` with the contents of `magic`
+    #[sp(validate = "validate_magic_header")]
+    // Call `validate_magic_header()` with the contents of `magic`
     pub magic: u16,
     pub size: u32,
     reserved1: u16,
     reserved2: u16,
-    pixel_array_offset: u32,
-    #[sp(var_size)] // We must tell simple_parse that this custom type has a variable size or this wont compile
+    pixel_offset: u32,
+    #[sp(var_size)]
+    // We must tell simple_parse that this custom type has a variable size or this wont compile
     dib: DIBHeader,
+    #[sp(
+        reader="readall_at_offset, pixel_offset, size", // Read the rest of the buffer into pixels
+        writer="writeall_at_offset, pixel_offset" // Write pixels for the rest of the buffer
+    )]
+    pixels: Vec<u32>,
+}
+
+use std::fmt;
+impl fmt::Debug for BmpHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BmpHeader")
+            .field("magic", &self.magic)
+            .field("size", &self.size)
+            .field("pixel_offset", &self.pixel_offset)
+            .field("dib", &self.dib)
+            .field("pixels", &self.pixels.len())
+            .finish()
+    }
 }
 
 // You differentiate DIB header types by their size...
 #[derive(Debug, SpRead, SpWrite)]
 #[sp(id_type = "u32", endian = "little")] // The header size is a u32
 pub enum DIBHeader {
-    #[sp(id = 40)] // Only support BITMAPINFOHEADER for this toy example which has a size of 40 bytes
+    #[sp(id = 40)]
+    // Only support BITMAPINFOHEADER for this toy example which has a size of 40 bytes
     BitmapInfo {
         width: i32,
         height: i32,
@@ -33,11 +54,10 @@ pub enum DIBHeader {
         // The logic for parsing the two fields bellow is complicated. We must use custom reader/writer
         #[sp(
             reader="BitmapCompression::read, compression", // self.compression_info = BitmapCompression::read(&compression, ...)?;
-            writer="BitmapCompression::write"   // BitmapCompression::write(this: &BitmapCompression, ...)
+            writer="BitmapCompression::write" // BitmapCompression::write(this: &BitmapCompression, ...)
         )]
         compression_info: BitmapCompression,
         #[sp(
-            // Regular functions are also allowed
             reader="parse_color_table, clr_used, compression_info, bit_count", // parse_color_table(clr_used: &u32, comp_info: &BitCompression, )
             writer="write_color_table"
         )]
@@ -152,13 +172,12 @@ impl BitmapCompression {
 
 /// This function is called when a magic header is read or about to be written
 fn validate_magic_header(magic: &u16, ctx: &mut SpCtx) -> Result<(), SpError> {
-    
     println!("Validating magic bmp header !!");
     // Allow writing invalid BMP headers for fun
     if !ctx.is_reading {
-        return Ok(())
+        return Ok(());
     }
-    
+
     // BMP headers must start with two bytes containing B and M
     if *magic != 0x4D42 {
         Err(SpError::InvalidBytes)
