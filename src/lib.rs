@@ -7,11 +7,17 @@ pub use log::debug;
 /// Allows for compile time assertions in the generated derive code
 pub use static_assertions as sa;
 
+#[cfg(test)]
+mod tests;
+
 mod error;
 pub use error::*;
 
 mod default_impls;
 pub use default_impls::*;
+
+mod helpers;
+pub use helpers::*;
 
 pub use simple_parse_derive::*;
 
@@ -46,7 +52,7 @@ pub type DefaultCountType = u32;
 /// This is a safeguard against reading malicious/malformed dynamically sized types.
 /// For example, when reading a String that says it contains INT_MAX characters, chunks of
 /// MAX_ALLOC_SIZE will be read at a time instead of allocating INT_MAX bytes in one go.
-pub const MAX_ALLOC_SIZE: usize = 1024;
+pub const MAX_ALLOC_SIZE: usize = 4096;
 
 /// Provides optimization hints used by [SpRead] traits.
 ///
