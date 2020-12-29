@@ -201,7 +201,7 @@ fn generate_fields_write(
         // Pick between custom write or default
         let write_call = match field_attrs.writer {
             Some(ref s) => {
-                let (fn_name, dependent_fields) = match split_custom_attr(s, &fields, idx, None, AllowFields::All) {
+                let (fn_name, dependent_fields) = match split_custom_attr(s, &fields, idx, prefix, AllowFields::All) {
                     Ok(v) => v,
                     Err(e) => {
                         panic!("Invalid custom writer for field '{}', {}", &simple_field_names[idx], e);
