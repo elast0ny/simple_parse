@@ -125,3 +125,91 @@ where
     ctx.count = Some(usize::MAX);
     write_at_offset(this, offset, ctx, dst)
 }
+
+/// Reads `static_size` bytes from `src` into `dst`
+///
+/// This function can be used with untrusted `static_size` as it will
+/// consume at most [MAX_ALLOC_SIZE] chunks at a time to prevent OOM.
+#[inline(always)]
+pub fn validate_reader<R: Read + ?Sized>(
+    static_size: usize,
+    dst: &mut Vec<u8>,
+    src: &mut R,
+) -> Result<(), SpError> {
+    let mut bytes_read = 0;
+
+    while bytes_read < static_size {
+        let cur_len = dst.len();
+        let cur_chunk_len = std::cmp::min(MAX_ALLOC_SIZE, static_size - bytes_read);
+
+        // Allocate an extra chunk at end of vec
+        dst.reserve(cur_chunk_len);
+
+        // Increase len and get slice to new chunk
+        unsafe {
+            dst.set_len(cur_len + cur_chunk_len);
+        }
+        let dst_slice = &mut dst.as_mut_slice()[cur_len..];
+
+        // Read chunk into slice
+        if let Err(e) = validate_reader_exact(dst_slice, src) {
+            // Remove potentially uninit data from dst vec
+            unsafe {
+                dst.set_len(cur_len);
+            }
+            return Err(e);
+        }
+
+        bytes_read += cur_chunk_len;
+    }
+
+    Ok(())
+}
+
+/// Read the exact number of bytes required to fill `buf`.
+/// When reading an untrusted number of bytes, use [validate_reader]
+#[inline(always)]
+pub fn validate_reader_exact<R: Read + ?Sized>(dst: &mut [u8], src: &mut R) -> Result<(), SpError> {
+    #[cfg(feature = "verbose")]
+    crate::debug!("Read({})", dst.len());
+
+    // Copy from reader into our stack variable
+    if src.read_exact(dst).is_err() {
+        return Err(SpError::NotEnoughSpace);
+    }
+
+    Ok(())
+}
+
+/// Consumes bytes from a Cursor<&[u8]> returning a raw pointer to the validated bytes
+#[inline(always)]
+pub fn validate_cursor<T: AsRef<[u8]>>(
+    static_size: usize,
+    src: &mut Cursor<T>,
+) -> Result<*mut u8, crate::SpError> {
+    let idx = src.position();
+    let bytes = src.get_ref().as_ref();
+
+    #[cfg(feature = "verbose")]
+    {
+        let len_left = if (bytes.len() as u64) < idx {
+            0
+        } else {
+            (bytes.len() as u64) - idx
+        };
+        debug!("Check src.len({}) < {}", len_left, static_size);
+    }
+
+    // Check length
+    if idx + static_size as u64 > bytes.len() as u64 {
+        return Err(SpError::NotEnoughSpace);
+    }
+
+    // Return pointer to slice
+    let checked_bytes = unsafe { bytes.as_ptr().add(idx as usize) as _ };
+
+    // Advance cursor
+    src.set_position(idx + static_size as u64);
+
+    Ok(checked_bytes)
+}
