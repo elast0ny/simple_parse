@@ -18,8 +18,7 @@ pub enum Message {
         // simple_parse does not know about LoginInfo while generating code for `enum Message`
         // We must explicitly declare that it is variably sized (because it contains a variably sized type)
         // Or else compilation will fail
-        #[sp(var_size)]
-        LoginInfo,
+        #[sp(var_size)] LoginInfo,
     ),
     Logout(u16, u16),
     Chat(String),
@@ -40,7 +39,7 @@ pub struct LoginInfo {
     username: String,
     password: String,
     got_session: bool,
-    #[sp(count="got_session")]
+    #[sp(count = "got_session")]
     session: Option<u32>,
 }
 
