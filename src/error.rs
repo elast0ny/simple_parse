@@ -1,7 +1,7 @@
 use std::error;
 use std::fmt;
 
-/// Possible errors when decoding/encoding
+/// Possible errors when reading/writing
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum SpError {
     /// The data we attempted to decode did not contain a valid enum variant

@@ -1,6 +1,6 @@
 use crate::*;
 
-/// Consumes bytes until the specified offset is reached then calls T::from_reader
+/// Consumes bytes until the specified `offset` is reached then calls `T::from_reader`
 pub fn read_at_offset<T, V, R>(offset: &V, src: &mut R, ctx: &mut SpCtx) -> Result<T, SpError>
 where
     V: Copy + Into<u64>,
@@ -31,7 +31,7 @@ where
     T::inner_from_reader(src, ctx)
 }
 
-/// Consumes bytes until the specified offset is reached then calls T::from_reader with `count` set to Some(total_sz - offset)
+/// Consumes bytes until the specified `offset` is reached then calls `T::from_reader` with `count` set to `Some(total_sz - offset)`
 pub fn readall_at_offset<T, V, R>(
     offset: &V,
     total: &V,
@@ -70,7 +70,7 @@ where
     T::inner_from_reader(src, ctx)
 }
 
-/// Writes null bytes into the writer until offset is reached
+/// Writes null bytes into the writer until `offset` is reached
 pub fn write_at_offset<T, V, W>(
     this: &T,
     offset: &V,
@@ -110,7 +110,7 @@ where
     Ok(bytes_written + this.inner_to_writer(ctx, dst)?)
 }
 
-/// Writes null bytes into the writer until offset is reached then calls T.to_writer() with count set to Some()
+/// Writes null bytes into the writer until `offset` is reached then calls `T.to_writer()` with `count` set to `Some(usize::MAX)`
 pub fn writeall_at_offset<T, V, W>(
     this: &T,
     offset: &V,
@@ -181,7 +181,7 @@ pub fn validate_reader_exact<R: Read + ?Sized>(dst: &mut [u8], src: &mut R) -> R
     Ok(())
 }
 
-/// Consumes bytes from a Cursor<&[u8]> returning a raw pointer to the validated bytes
+/// Consumes bytes from a `Cursor<AsRef<[u8]>>` returning a raw pointer to the validated bytes
 #[inline(always)]
 pub fn validate_cursor<T: AsRef<[u8]>>(
     static_size: usize,
