@@ -2,11 +2,11 @@ use std::error;
 use std::fmt;
 
 /// Possible errors when decoding/encoding
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum SpError {
     /// The data we attempted to decode did not contain a valid enum variant
     UnknownEnumVariant,
-    /// There is not enough space to write T into the writer
+    /// There is not enough space to write T into the writer or to read T from the reader
     NotEnoughSpace,
     /// An annotated count field's type is too small to fit the number of elements
     CountFieldOverflow,
