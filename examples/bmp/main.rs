@@ -51,7 +51,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Write header back into bytes
     let mut generated_data = Vec::new();
     header.to_writer(&mut generated_data)?;
-    println!("Back into bytes :\n{:X?}", generated_data);
+    println!(
+        "Back into bytes :\n{:X?}...",
+        &generated_data[..std::cmp::min(128, generated_data.len())]
+    );
 
     // The generated data should match the original data
     assert_eq!(orig_data, generated_data.as_slice());
