@@ -4,15 +4,13 @@ use std::io::{Read, Write};
 #[derive(SpRead, SpWrite)]
 #[sp(endian = "little")] // The BMP format explicitely needs little endian
 pub struct BmpHeader {
-    #[sp(validate = "validate_magic_header")]
-    // Call `validate_magic_header()` with the contents of `magic`
+    #[sp(validate = "validate_magic_header")] // Call `validate_magic_header()` with the contents of `magic`
     pub magic: u16,
     pub size: u32,
     reserved1: u16,
     reserved2: u16,
     pixel_offset: u32,
-    #[sp(var_size)]
-    // We must tell simple_parse that this custom type has a variable size or this wont compile
+    #[sp(var_size)] // We must tell simple_parse that this custom type has a variable size or this wont compile
     dib: DIBHeader,
     #[sp(
         reader="readall_at_offset, pixel_offset, size", // Read the rest of the buffer into pixels
