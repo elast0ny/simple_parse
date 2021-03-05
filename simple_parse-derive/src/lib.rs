@@ -301,7 +301,7 @@ pub(crate) fn split_custom_attr(
     cur_field_idx: usize,
     prefix: Option<&str>,
     allow_field: AllowFields,
-) -> Result<(proc_macro2::TokenStream, proc_macro2::TokenStream), Box<dyn std::error::Error>> {
+) -> std::result::Result<(proc_macro2::TokenStream, proc_macro2::TokenStream), Box<dyn std::error::Error>> {
     let mut fn_name = String::new();
     let mut field_names = Vec::new();
     let mut got_path = false;

@@ -105,7 +105,7 @@ pub(crate) fn generate(
                     mut checked_bytes: *mut u8,
                     src: &mut R,
                     ctx: &mut ::simple_parse::SpCtx,
-                ) -> Result<Self, ::simple_parse::SpError>
+                ) -> std::result::Result<Self, ::simple_parse::SpError>
                 where
                     Self: Sized + ::simple_parse::SpOptHints {
                         #unsafe_read_code
@@ -143,7 +143,7 @@ pub(crate) fn generate(
                         mut checked_bytes: *const u8,
                         src: &mut std::io::Cursor<&#lifetime [u8]>,
                         ctx: &mut ::simple_parse::SpCtx,
-                    ) -> Result<Self, ::simple_parse::SpError>
+                    ) -> std::result::Result<Self, ::simple_parse::SpError>
                     where
                         Self: Sized + ::simple_parse::SpOptHints {
                             #unsafe_read_code
@@ -182,7 +182,7 @@ pub(crate) fn generate(
                         mut checked_bytes: *mut u8,
                         src: &mut std::io::Cursor<&#lifetime mut [u8]>,
                         ctx: &mut ::simple_parse::SpCtx,
-                    ) -> Result<Self, ::simple_parse::SpError>
+                    ) -> std::result::Result<Self, ::simple_parse::SpError>
                     where
                         Self: Sized + ::simple_parse::SpOptHints {
                             #unsafe_read_code

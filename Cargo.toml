@@ -1,6 +1,6 @@
 [package]
 name = "simple_parse"
-version = "0.6.1"
+version = "0.6.2"
 authors = ["ElasT0ny <elast0ny00@gmail.com>"]
 edition = "2018"
 description = "A declarative converter for Rust type to and from binary"
