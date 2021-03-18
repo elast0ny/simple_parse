@@ -258,7 +258,7 @@ pub(crate) fn is_var_size(typ: &Type, attrs: Option<&FieldAttributes>) -> bool {
 pub(crate) fn get_static_size(typ: &Type) -> proc_macro2::TokenStream {
     let field_ty = quote! {#typ}.to_string();
     // Return <bool>::STATIC_SIZE for Option<T>
-    if field_ty == "Option <" {
+    if field_ty.starts_with("Option <") {
         quote! {
             <bool as ::simple_parse::SpOptHints>::STATIC_SIZE
         }
