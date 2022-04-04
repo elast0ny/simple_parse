@@ -1,4 +1,8 @@
-use std::{convert::TryInto, ffi::{CString, CStr}, collections::*};
+use std::{
+    collections::*,
+    convert::TryInto,
+    ffi::{CStr, CString},
+};
 
 use core::hash::Hash;
 
@@ -44,7 +48,7 @@ impl SpWrite for CString {
     }
 }
 
-impl<T:SpWrite> SpWrite for Option<T> {
+impl<T: SpWrite> SpWrite for Option<T> {
     fn inner_to_writer<W: Write + ?Sized>(
         &self,
         ctx: &mut SpCtx,
@@ -54,7 +58,7 @@ impl<T:SpWrite> SpWrite for Option<T> {
             Some(v) => {
                 let o = 1u8;
                 Ok(o.inner_to_writer(ctx, dst)? + v.inner_to_writer(ctx, dst)?)
-            },
+            }
             None => {
                 let o = 0u8;
                 o.inner_to_writer(ctx, dst)
@@ -83,7 +87,7 @@ macro_rules! iterator_write {
 
                 // Dont propagate `len` field to inner types
                 ctx.len = None;
-                
+
                 iterator_write!(inner, total_sz, self, ctx, dst $(+ $generics)*);
 
                 Ok(total_sz)

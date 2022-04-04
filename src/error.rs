@@ -2,8 +2,10 @@ use std::error;
 use std::fmt;
 
 /// Possible errors when reading/writing
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug)]
 pub enum SpError {
+    /// Could not read bytes from reader
+    ReadFailed(std::io::Error),
     /// The data we attempted to decode did not contain a valid enum variant
     UnknownEnumVariant,
     /// There is not enough space to write T into the writer or to read T from the reader
@@ -17,7 +19,8 @@ pub enum SpError {
 }
 impl fmt::Display for SpError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
+            SpError::ReadFailed(e) => write!(f, "Failed to read more bytes : {e}"),
             SpError::UnknownEnumVariant => write!(f, "Encountered invalid enum variant ID"),
             SpError::NotEnoughSpace => {
                 write!(f, "Not enough bytes in the buffer to parse wanted type")
@@ -33,6 +36,9 @@ impl fmt::Display for SpError {
 }
 impl error::Error for SpError {
     fn cause(&self) -> Option<&dyn error::Error> {
-        None
+        match self {
+            SpError::ReadFailed(e) => Some(e),
+            _ => None,
+        }
     }
 }

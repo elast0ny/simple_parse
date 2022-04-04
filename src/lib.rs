@@ -1,4 +1,7 @@
-use std::io::{Read, Write};
+use std::{
+    io::{Read, Write},
+    mem::MaybeUninit,
+};
 
 #[cfg(feature = "verbose")]
 pub use log::debug;
@@ -47,43 +50,45 @@ pub type DefaultCountType = u32;
 /// MAX_ALLOC_SIZE will be read at a time instead of allocating INT_MAX bytes in one go.
 pub const MAX_ALLOC_SIZE: usize = 4096;
 
-/// Provides optimization hints used by [SpRead] traits.
-pub trait SpOptHints {
-    /// Whether the type has a variable size
-    const IS_VAR_SIZE: bool = true;
-    /// How many bytes the `unchecked` parsing functions can assume are valid
-    const STATIC_SIZE: usize = 0;
-}
-
 /// Parses `Self` from a source implementing [Read](std::io::Read) ([File](std::fs::File),[TcpStream](std::net::TcpStream), etc...)
 ///
 /// This trait is most usefull when the bytes are coming from some kind of IO stream.
 /// When possible, it is recommend to use [SpReadRaw] instead for better performance.
-pub trait SpRead: Sized + SpOptHints {
-
+pub trait SpRead: Sized {
     #[doc(hidden)]
     const STATIC_CHECKS: () = ();
 
-    /// Converts bytes from a [Reader](std::io::Read) into `Self`
-    ///
-    /// This functions allows specifying endianness and `len` fields as opposed to using defaults with `from_reader`
-    fn inner_from_reader<R: Read + ?Sized>(
-        // Data source
-        src: &mut R,
-        // Parsing context
-        ctx: &mut SpCtx,
-        // Data that has already been read from src. Use this first
-        existing: &[u8],
-    ) -> Result<Self, crate::SpError>;
+    #[doc(hidden)]
+    /// Marks types that have the same byte representation on the wire and in memory
+    const IS_SAFE_REPR: bool = false;
 
     /// Converts bytes from a `&mut Read` into `Self`
-    fn from_reader<R: Read + ?Sized>(src: &mut R) -> Result<Self, crate::SpError>
-    {
+    fn from_reader<'a, R: Read + ?Sized>(
+        src: &mut R,
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
         let mut ctx = SpCtx::default();
-        let r = Self::inner_from_reader(src, &mut ctx, &[]);
-        #[cfg(feature="verbose")]
-        ::log::debug!("  Read {} bytes", ctx.cursor);
-        r
+
+        let v = Self::inner_from_reader(src, &mut ctx, dst)?;
+        #[cfg(feature = "verbose")]
+        ::log::debug!("  total : {} bytes", ctx.cursor);
+
+        Ok(v)
+    }
+
+    /// Converts bytes from a [Reader](std::io::Read) into `Self` with a provided SpCtx
+    fn inner_from_reader<'a, R: Read + ?Sized>(
+        src: &mut R,
+        ctx: &mut SpCtx,
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError>;
+
+    #[doc(hidden)]
+    unsafe fn validate_contents<'a>(
+        _ctx: &mut SpCtx,
+        _dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
+        panic!("validate_content internal api should not be used !");
     }
 }
 
@@ -100,9 +105,9 @@ pub trait SpWrite {
     fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
         let mut ctx = SpCtx::default();
         let r = self.inner_to_writer(&mut ctx, dst);
-        #[cfg(feature="verbose")]
+        #[cfg(feature = "verbose")]
         ::log::debug!("  Wrote {} bytes", ctx.cursor);
-        
+
         r
     }
 }

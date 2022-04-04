@@ -1,162 +1,206 @@
-use core::mem::size_of;
 use core::hash::Hash;
-use std::{ffi::CString, collections::*};
-
+use std::{collections::*, ffi::CString, mem::size_of};
 
 use crate::*;
 
 impl SpRead for String {
-    const STATIC_CHECKS: () = {
-        const _: () = assert!(String::STATIC_SIZE == <Vec<u8>>::STATIC_SIZE);
-    };
-
-    #[inline(always)]
-    fn inner_from_reader<R: Read + ?Sized>(
+    fn inner_from_reader<'a, R: Read + ?Sized>(
         src: &mut R,
         ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError> {
-        let mut dst = [0u8; Self::STATIC_SIZE];
-        validate_reader_exact(ctx, &mut dst, src)?;
-        unsafe { Self::inner_from_reader_unchecked(dst.as_mut_ptr(), src, ctx) }
-    }
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
+        // Read the string as a Vec<u8>
+        let mut tmp = MaybeUninit::uninit();
+        <Vec<u8>>::inner_from_reader(src, ctx, &mut tmp)?;
+        let bytes = unsafe { tmp.assume_init() };
 
-    #[inline(always)]
-    unsafe fn inner_from_reader_unchecked<R: Read + ?Sized>(
-        checked_bytes: *mut u8,
-        src: &mut R,
-        ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError>
-    {
-        let bytes = <Vec<u8>>::inner_from_reader_unchecked(checked_bytes, src, ctx)?;
+        // Validate UTF8
         match String::from_utf8(bytes) {
-            Ok(v) => Ok(v),
-            Err(_) => Err(SpError::InvalidBytes),
+            Ok(v) => dst.write(v),
+            Err(_) => return Err(SpError::InvalidBytes),
+        };
+
+        let v = unsafe { dst.assume_init_mut() };
+
+        #[cfg(feature = "verbose")]
+        if v.len() > 32 {
+            ::log::debug!("'{}'...", &v[..v.char_indices().skip(32).next().unwrap().0]);
+        } else {
+            ::log::debug!("'{}'", &v);
         }
+
+        Ok(v)
     }
 }
 
 impl SpRead for CString {
-    #[inline(always)]
-    fn inner_from_reader<R: Read + ?Sized>(
+    fn inner_from_reader<'a, R: Read + ?Sized>(
         src: &mut R,
         ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError> {
-        let mut dst = [0u8; Self::STATIC_SIZE];
-        validate_reader_exact(ctx, &mut dst, src)?;
-        unsafe { Self::inner_from_reader_unchecked(dst.as_mut_ptr(), src, ctx) }
-    }
-
-    #[inline(always)]
-    unsafe fn inner_from_reader_unchecked<R: Read + ?Sized>(
-        checked_bytes: *mut u8,
-        src: &mut R,
-        ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError>
-    {
-        let mut bytes = Vec::new();
-        if *checked_bytes == 0 {
-            return Ok(CString::from_vec_unchecked(bytes));
-        }
-        bytes.push(*checked_bytes);     
-
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
         // Read one byte at a time adding them to bytes until we hit a null terminator
-        let mut dst = [0u8];
-        while let Ok(()) = validate_reader_exact(ctx, &mut dst, src) {
-            if dst[0] == 0x00 {
+        let mut bytes = Vec::new();
+        let mut tmp = [0u8];
+        loop {
+            if let Err(e) = src.read_exact(&mut tmp) {
+                return Err(SpError::ReadFailed(e));
+            }
+
+            #[cfg(feature = "verbose")]
+            ::log::debug!("  read(1)");
+
+            if tmp[0] == 0x00 {
                 break;
             }
-            bytes.push(dst[0]);
+            bytes.push(tmp[0]);
         }
 
-        Ok(CString::from_vec_unchecked(bytes))
+        ctx.cursor += bytes.len();
+
+        unsafe {
+            dst.write(CString::from_vec_unchecked(bytes));
+
+            Ok(dst.assume_init_mut())
+        }
     }
 }
 
 impl<T: SpRead> SpRead for Option<T> {
-    fn inner_from_reader<R: Read + ?Sized>(
+    fn inner_from_reader<'a, R: Read + ?Sized>(
         src: &mut R,
         ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError> {
-        let mut dst = [0u8; size_of::<u8>()];
-        validate_reader_exact(ctx, &mut dst, src)?;
-        unsafe { Self::inner_from_reader_unchecked(dst.as_mut_ptr(), src, ctx) }
-    }
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
+        // Read the u8 which indicates None or Some
+        let mut tmp = MaybeUninit::uninit();
+        let v = <u8>::inner_from_reader(src, ctx, &mut tmp)?;
 
-    unsafe fn inner_from_reader_unchecked<R: Read + ?Sized>(
-        checked_bytes: *mut u8,
-        src: &mut R,
-        ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError>
-    {
-        if *checked_bytes == 0 {
-            return Ok(None);
+        // Initialize the value
+        if *v == 0 {
+            dst.write(None);
+        } else {
+            let mut tmp = MaybeUninit::uninit();
+            <T>::inner_from_reader(src, ctx, &mut tmp)?;
+            dst.write(Some(unsafe { tmp.assume_init() }));
         }
 
-        Ok(Some(T::inner_from_reader(src, ctx)?))
+        unsafe { Ok(dst.assume_init_mut()) }
     }
 }
 
 macro_rules! collection_read {
     ($typ:ty, $add_func:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)? $(, $generics:tt $(: $bounds:ident $(+ $others:ident)*)?)*) => {
-        impl<'b, $generic : SpRead $(+ $bound $(+ $other)*)?, $($generics : SpRead $(+ $bounds$(+ $others)*)?),*> SpRead for $typ {
-            fn inner_from_reader<R: Read + ?Sized>(
+        impl<'b, $generic : SpRead $(+ $bound $(+ $other)*)? $(, $generics : SpRead $(+ $bounds$(+ $others)*)?)*> SpRead for $typ  {
+            fn inner_from_reader<'a, R: Read + ?Sized>(
                 src: &mut R,
                 ctx: &mut SpCtx,
-            ) -> Result<Self, crate::SpError> {
-                let mut dst = [0u8; size_of::<DefaultCountType>()];
-                validate_reader_exact(ctx, &mut dst, src)?;
-                unsafe { Self::inner_from_reader_unchecked(dst.as_mut_ptr(), src, ctx) }
-            }
-        
-            unsafe fn inner_from_reader_unchecked<R: Read + ?Sized>(
-                checked_bytes: *mut u8,
-                src: &mut R,
-                ctx: &mut SpCtx,
-            ) -> Result<Self, crate::SpError>
+                dst: &'a mut MaybeUninit<Self>,
+            ) -> Result<&'a mut Self, crate::SpError>
             {
+                // Get the number of elements we must read
                 let len = match ctx.len.take() {
-                    None => <DefaultCountType>::inner_from_reader_unchecked(checked_bytes, src, ctx)? as usize,
+                    None => {
+                        let mut tmp = MaybeUninit::uninit();
+                        *<DefaultCountType>::inner_from_reader(src, ctx, &mut tmp)? as usize
+                    },
                     Some(v) => v,
                 };
-                
+
                 let mut r = <$typ>::new();
-                // If any of the generics are variably sized
-                if <$generic>::IS_VAR_SIZE $( || <$generics>::IS_VAR_SIZE)* {
-                    // Add every item 1 by 1
-                    for _i in 0..len {
-                        r.$add_func(
-                            <$generic>::inner_from_reader(src, ctx)?
-                            $(,<$generics>::inner_from_reader(src, ctx)?)*
-                        );
-                    }
-                } else {
-                    let mut bytes = Vec::new();
-                    // calculate total size required for these statically sized items
-                    let sz_needed = len * (<$generic>::STATIC_SIZE $( + !<$generics>::STATIC_SIZE)*);
-                    validate_reader(ctx, sz_needed, &mut bytes, src)?;
-                    let mut ptr = bytes.as_mut_ptr();
-                    for _i in 0..len {
-                        r.$add_func(
+                for _i in 0..len {
+                    r.$add_func(
+                        {
+                            let mut v = MaybeUninit::<$generic>::uninit();
+                            <$generic>::inner_from_reader(src, ctx, &mut v)?;
+                            unsafe { v.assume_init() }
+                        }
+                        $(,
                             {
-                                let v = <$generic>::inner_from_reader_unchecked(ptr, src, ctx)?;
-                                ptr = ptr.add(<$generic>::STATIC_SIZE);
-                                v
+                                let mut v = MaybeUninit::<$generics>::uninit();
+                                <$generics>::inner_from_reader(src, ctx, &mut v)?;
+                                unsafe { v.assume_init() }
                             }
-                            $(,{
-                                let v = <$generics>::inner_from_reader_unchecked(ptr, src, ctx)?;
-                                ptr = ptr.add(<$generics>::STATIC_SIZE);
-                                v
-                            })*
-                        );
-                    }
+                        )*
+                    );
                 }
-                Ok(r)
+
+                dst.write(r);
+                Ok(unsafe{ dst.assume_init_mut()})
             }
         }
     };
 }
 
-collection_read!(Vec<T>, push, T);
+// TODO : Generalize this optimized Vec<T> impl to all collections
+
+impl<T: SpRead + Sized> SpRead for Vec<T> {
+    fn inner_from_reader<'a, R: Read + ?Sized>(
+        src: &mut R,
+        ctx: &mut SpCtx,
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
+        // Get the number of elements we must read
+        let mut len = match ctx.len.take() {
+            None => {
+                let mut tmp = MaybeUninit::uninit();
+                *<DefaultCountType>::inner_from_reader(src, ctx, &mut tmp)? as usize
+            }
+            Some(v) => v,
+        };
+
+        let mut r: Vec<MaybeUninit<T>> = Vec::new();
+        if T::IS_SAFE_REPR {
+            while len > 0 {
+                let item_delta = std::cmp::min(MAX_ALLOC_SIZE / size_of::<T>(), len);
+
+                // Make enough space for an extra `item_delta` items
+                r.reserve(item_delta);
+                let cur_len = r.len();
+
+                unsafe {
+                    // Pointer to the next free item
+                    let next_free_ptr = r.as_mut_ptr().add(cur_len);
+
+                    // Read the content for the next `item_delta` items
+                    let dst_bytes = core::slice::from_raw_parts_mut(
+                        next_free_ptr as *mut u8,
+                        item_delta * size_of::<T>(),
+                    );
+                    if let Err(e) = src.read_exact(dst_bytes) {
+                        return Err(SpError::ReadFailed(e));
+                    }
+                    #[cfg(feature = "verbose")]
+                    ::log::debug!("  read({})", dst_bytes.len());
+
+                    ctx.cursor += dst_bytes.len();
+                    r.set_len(cur_len + item_delta);
+
+                    // Validate every item's content
+                    for v in &mut r[cur_len..] {
+                        <T>::validate_contents(ctx, v)?;
+                    }
+                }
+                len -= item_delta;
+            }
+        } else {
+            for _i in 0..len {
+                r.push({
+                    let mut v = MaybeUninit::uninit();
+                    <T>::inner_from_reader(src, ctx, &mut v)?;
+                    v
+                });
+            }
+        }
+
+        unsafe {
+            dst.write(core::mem::transmute(r));
+            Ok(dst.assume_init_mut())
+        }
+    }
+}
+
+//collection_read!(Vec<T>, push, T);
 collection_read!(VecDeque<T>, push_back, T);
 collection_read!(LinkedList<T>, push_back, T);
 collection_read!(HashSet<K>, insert, K: Eq + Hash);

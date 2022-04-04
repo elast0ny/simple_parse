@@ -4,13 +4,15 @@ use std::io::{Read, Write};
 #[derive(SpRead, SpWrite)]
 #[sp(endian = "little")] // The BMP format explicitely needs little endian
 pub struct BmpHeader {
-    #[sp(validate = "validate_magic_header")] // Call `validate_magic_header()` with the contents of `magic`
+    #[sp(validate = "validate_magic_header")]
+    // Call `validate_magic_header()` with the contents of `magic`
     pub magic: u16,
     pub size: u32,
     reserved1: u16,
     reserved2: u16,
     pixel_offset: u32,
-    #[sp(var_size)] // We must tell simple_parse that this custom type has a variable size or this wont compile
+    #[sp(var_size)]
+    // We must tell simple_parse that this custom type has a variable size or this wont compile
     dib: DIBHeader,
 }
 
@@ -168,7 +170,7 @@ fn validate_magic_header(magic: &u16, ctx: &mut SpCtx) -> Result<(), SpError> {
     if !ctx.is_reading {
         return Ok(());
     }
-    
+
     println!("Validating magic bmp header !!");
     // BMP headers must start with two bytes containing B and M
     if *magic != 0x4D42 {

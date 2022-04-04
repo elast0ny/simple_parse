@@ -5,7 +5,6 @@
  * This example also shows how simple_parse is able to optimize read() calls
  * by aggregating statically sized types.
  */
-
 use std::io::Write;
 
 use ::simple_parse::{SpRead, SpWrite};
@@ -28,13 +27,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Simulate bytes coming from a socket
     let mut recv_sock: &[u8] = &[
-        1,
-        2, 0,
-        3, 0, 0, 0,
-        0, 0, 0, 3,
-        0xDE, 0xAD, 0xBE, 0xEF,
-        0xBA, 0xDC, 0x0F, 0xFE,
-        0x11, 0x22, 0x33, 0x44,
+        1, 2, 0, 3, 0, 0, 0, 0, 0, 0, 3, 0xDE, 0xAD, 0xBE, 0xEF, 0xBA, 0xDC, 0x0F, 0xFE, 0x11,
+        0x22, 0x33, 0x44,
     ];
 
     // Read data from "socket"
@@ -48,18 +42,18 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     my_struct.to_writer(&mut send_sock)?;
 
     /* STDOUT
-    * [DEBUG] Read struct SomeStruct
-    * [DEBUG] Read(11)
-    * [DEBUG]   (u8)	1
-    * [DEBUG]   (u16)	2
-    * [DEBUG]   (u32)	3
-    * [DEBUG]   (u32)	3
-    * [DEBUG] Read(12)
-    * [DEBUG]   (u32)	3735928559
-    * [DEBUG]   (u32)	3134984190
-    * [DEBUG]   (u32)	287454020
-    * [1, 2, 0, 3, 0, 0, 0, 0, 0, 0, 4, DE, AD, BE, EF, BA, DC, F, FE, 11, 22, 33, 44, FF, FF, FF, FF]
-    */
+     * [DEBUG] Read struct SomeStruct
+     * [DEBUG] Read(11)
+     * [DEBUG]   (u8)	1
+     * [DEBUG]   (u16)	2
+     * [DEBUG]   (u32)	3
+     * [DEBUG]   (u32)	3
+     * [DEBUG] Read(12)
+     * [DEBUG]   (u32)	3735928559
+     * [DEBUG]   (u32)	3134984190
+     * [DEBUG]   (u32)	287454020
+     * [1, 2, 0, 3, 0, 0, 0, 0, 0, 0, 4, DE, AD, BE, EF, BA, DC, F, FE, 11, 22, 33, 44, FF, FF, FF, FF]
+     */
     println!("{:X?}", send_sock);
 
     Ok(())

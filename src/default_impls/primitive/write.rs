@@ -1,7 +1,7 @@
 use core::mem::size_of;
-use std::{sync::atomic::*, num::*};
+use std::{num::*, sync::atomic::*};
 
-use crate::{SpWrite, SpError};
+use crate::{SpError, SpWrite};
 
 macro_rules! primitive_write {
     ($typ:ty) => {
@@ -14,23 +14,21 @@ macro_rules! primitive_write {
                 ctx: &mut crate::SpCtx,
                 dst: &mut W,
             ) -> Result<usize, crate::SpError> {
-                let mut v = unsafe{*(self as *const _ as *const $as_typ)};
+                let mut v = unsafe { *(self as *const _ as *const $as_typ) };
                 let v_ptr = &mut v as *mut _ as *mut u8;
-        
-                let buf = unsafe {
-                    core::slice::from_raw_parts_mut(v_ptr, size_of::<$as_typ>())
-                };
 
-                if ctx.is_little_endian != cfg!(target_endian="little") {
+                let buf = unsafe { core::slice::from_raw_parts_mut(v_ptr, size_of::<$as_typ>()) };
+
+                if ctx.is_little_endian != cfg!(target_endian = "little") {
                     buf.reverse();
                 }
-        
+
                 if dst.write_all(buf).is_err() {
                     return Err(SpError::NotEnoughSpace);
                 }
-                
+
                 ctx.cursor += size_of::<$as_typ>();
-                Ok(size_of::<$as_typ>())        
+                Ok(size_of::<$as_typ>())
             }
         }
     };
@@ -58,11 +56,7 @@ impl SpWrite for bool {
         dst: &mut W,
     ) -> Result<usize, crate::SpError> {
         // Write bool as a u8
-        if *self {
-            1u8
-        } else {
-            0
-        }.inner_to_writer(ctx, dst)
+        if *self { 1u8 } else { 0 }.inner_to_writer(ctx, dst)
     }
 }
 
@@ -84,11 +78,7 @@ impl SpWrite for AtomicBool {
         dst: &mut W,
     ) -> Result<usize, crate::SpError> {
         // Write bool as a u8
-        if self.load(Ordering::Relaxed) {
-            1u8
-        } else {
-            0
-        }.inner_to_writer(ctx, dst)
+        if self.load(Ordering::Relaxed) { 1u8 } else { 0 }.inner_to_writer(ctx, dst)
     }
 }
 

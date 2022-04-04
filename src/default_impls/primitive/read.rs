@@ -4,52 +4,47 @@ use std::sync::atomic::*;
 
 use crate::*;
 
-// For primtive types, we simply deref the checked bytes
-// as a pointer to the primitive type.
 macro_rules! primitive_read {
     ($typ:ty) => {
-        primitive_read!($typ, $typ);
-    };
-    ($typ:ty, $as_typ: ty) => {
         impl SpRead for $typ {
-            const STATIC_CHECKS: () = {
-                const _: () = assert!(<$typ>::STATIC_SIZE == size_of::<$typ>());
-                const _: () = assert!(size_of::<$typ>() == size_of::<$as_typ>());
-            };
-
-            #[inline(always)]
-            fn inner_from_reader<R: Read + ?Sized>(
-                src: &mut R,
+            const IS_SAFE_REPR: bool = true;
+            unsafe fn validate_contents<'a>(
                 ctx: &mut SpCtx,
-            ) -> Result<Self, crate::SpError> {
-                default_from_reader::<{ Self::STATIC_SIZE }, Self, R>(src, ctx)
+                dst: &'a mut MaybeUninit<Self>,
+            ) -> Result<&'a mut Self, crate::SpError> {
+                // If the data coming in is little endian  but the host isnt, swap
+                if size_of::<$typ>() > 1 && ctx.is_little_endian != cfg!(target_endian = "little") {
+                    let raw_bytes = core::slice::from_raw_parts_mut(
+                        dst.as_mut_ptr() as *mut u8,
+                        size_of::<$typ>(),
+                    );
+                    raw_bytes.reverse();
+                }
+
+                Ok(dst.assume_init_mut())
             }
 
-            #[inline(always)]
-            unsafe fn inner_from_reader_unchecked<R: Read + ?Sized>(
-                checked_bytes: *mut u8,
-                _src: &mut R,
+            fn inner_from_reader<'a, R: Read + ?Sized>(
+                // Data source
+                src: &mut R,
+                // Parsing context
                 ctx: &mut SpCtx,
-            ) -> Result<Self, crate::SpError>
-            {
-                let mut v = *(checked_bytes as *const $as_typ);
+                // Data that has already been read from src. Use this first
+                dst: &'a mut MaybeUninit<Self>,
+            ) -> Result<&'a mut Self, crate::SpError> {
+                static_size_from_reader::<Self, R, { size_of::<$typ>() }>(src, ctx, dst)?;
 
-                // Swap the endianness if the current machine doesnt match
-                // the wanted endianness
-                if size_of::<$as_typ>() > 1
-                    && ctx.is_little_endian != cfg!(target_endian = "little")
-                {
-                    v = v.swap_bytes();
-                }
-                
-                #[cfg(feature="verbose")]
-                ::log::debug!("  ({})\t{v}", stringify!($typ));
-                
-                Ok(v as $typ)
+                let v = unsafe { Self::validate_contents(ctx, dst)? };
+
+                #[cfg(feature = "verbose")]
+                ::log::debug!("0x{v:X?}");
+
+                Ok(v)
             }
         }
     };
 }
+
 primitive_read!(u8);
 primitive_read!(u16);
 primitive_read!(u32);
@@ -62,107 +57,72 @@ primitive_read!(i32);
 primitive_read!(i64);
 primitive_read!(i128);
 primitive_read!(isize);
-primitive_read!(f32, u32);
-primitive_read!(f64, u64);
+primitive_read!(f32);
+primitive_read!(f64);
 
-// Treat bool as non-zero u8 == true
-impl SpRead for bool {
-    #[inline(always)]
-    fn inner_from_reader<R: Read + ?Sized>(
-        src: &mut R,
-        ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError> {
-        Ok(<u8>::inner_from_reader(src, ctx)? > 0)
-    }
-    
-    #[inline(always)]
-    unsafe fn inner_from_reader_unchecked<R: Read + ?Sized>(
-        checked_bytes: *mut u8,
-        src: &mut R,
-        ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError>
-    {
-        Ok(<u8>::inner_from_reader_unchecked(checked_bytes, src, ctx)? > 0)
-    }
-}
-
-macro_rules! atomic_read {
-    ($typ:ty, $as_typ:ty) => {
-        impl SpRead for $typ {
-            const STATIC_CHECKS: () = {
-                const _: () = assert!(<$typ>::STATIC_SIZE == size_of::<$typ>());
-                const _: () = assert!(size_of::<$typ>() == size_of::<$as_typ>());
-            };
-
-            #[inline(always)]
-            fn inner_from_reader<R: Read + ?Sized>(
-                src: &mut R,
-                ctx: &mut SpCtx,
-            ) -> Result<Self, crate::SpError> {
-                let v = <$as_typ>::inner_from_reader(src, ctx)?;
-                unsafe {
-                    Self::inner_from_reader_unchecked(&v as *const _ as _, src, ctx)
-                }
-            }
-
-            #[inline(always)]
-            unsafe fn inner_from_reader_unchecked<R: Read + ?Sized>(
-                checked_bytes: *mut u8,
-                _src: &mut R,
-                _ctx: &mut SpCtx,
-            ) -> Result<Self, crate::SpError>
-            {
-                Ok(<$typ>::new(*(checked_bytes as *const $as_typ)))
-            }
-        }
-    };
-}
-atomic_read!(AtomicU8, u8);
-atomic_read!(AtomicU16, u16);
-atomic_read!(AtomicU32, u32);
-atomic_read!(AtomicU64, u64);
-atomic_read!(AtomicUsize, usize);
-atomic_read!(AtomicI8, i8);
-atomic_read!(AtomicI16, i16);
-atomic_read!(AtomicI32, i32);
-atomic_read!(AtomicI64, i64);
-atomic_read!(AtomicIsize, isize);
-atomic_read!(AtomicBool, bool);
+primitive_read!(AtomicU8);
+primitive_read!(AtomicU16);
+primitive_read!(AtomicU32);
+primitive_read!(AtomicU64);
+primitive_read!(AtomicUsize);
+primitive_read!(AtomicI8);
+primitive_read!(AtomicI16);
+primitive_read!(AtomicI32);
+primitive_read!(AtomicI64);
+primitive_read!(AtomicIsize);
 
 macro_rules! nonzero_read {
-    ($typ:ty, $as_typ:ty) => {
+    ($typ:ty, $as_typ: ty) => {
         impl SpRead for $typ {
             const STATIC_CHECKS: () = {
-                const _: () = assert!(<$typ>::STATIC_SIZE == size_of::<$typ>());
+                // Make sure we're casting to equivalent types in inner_from_reader
                 const _: () = assert!(size_of::<$typ>() == size_of::<$as_typ>());
             };
 
-            #[inline(always)]
-            fn inner_from_reader<R: Read + ?Sized>(
-                src: &mut R,
+            const IS_SAFE_REPR: bool = true;
+            unsafe fn validate_contents<'a>(
                 ctx: &mut SpCtx,
-            ) -> Result<Self, crate::SpError> {
-                let v = <$as_typ>::inner_from_reader(src, ctx)?;
-                unsafe {
-                    Self::inner_from_reader_unchecked(&v as *const _ as _, src, ctx)
-                }                
+                dst: &'a mut MaybeUninit<Self>,
+            ) -> Result<&'a mut Self, crate::SpError> {
+                // Make sure the contents are not zero
+                let v = dst.as_ptr() as *const $as_typ;
+                if *v == 0 {
+                    return Err(SpError::InvalidBytes);
+                }
+
+                // If the data coming in is little endian  but the host isnt, swap
+                if size_of::<$typ>() > 1 && ctx.is_little_endian != cfg!(target_endian = "little") {
+                    let raw_bytes = core::slice::from_raw_parts_mut(
+                        dst.as_mut_ptr() as *mut u8,
+                        size_of::<$typ>(),
+                    );
+                    raw_bytes.reverse();
+                }
+
+                Ok(dst.assume_init_mut())
             }
 
-            #[inline(always)]
-            unsafe fn inner_from_reader_unchecked<R: Read + ?Sized>(
-                checked_bytes: *mut u8,
-                _src: &mut R,
-                _ctx: &mut SpCtx,
-            ) -> Result<Self, crate::SpError>
-            {
-                match <$typ>::new(*(checked_bytes as *const $as_typ)) {
-                    Some(v) => Ok(v),
-                    None => Err(SpError::InvalidBytes),
-                }
+            fn inner_from_reader<'a, R: Read + ?Sized>(
+                // Data source
+                src: &mut R,
+                // Parsing context
+                ctx: &mut SpCtx,
+                // Data that has already been read from src. Use this first
+                dst: &'a mut MaybeUninit<Self>,
+            ) -> Result<&'a mut Self, crate::SpError> {
+                static_size_from_reader::<Self, R, { size_of::<$typ>() }>(src, ctx, dst)?;
+
+                let v = unsafe { Self::validate_contents(ctx, dst)? };
+
+                #[cfg(feature = "verbose")]
+                ::log::debug!("0x{v:X?}");
+
+                Ok(v)
             }
         }
     };
 }
+
 nonzero_read!(NonZeroU8, u8);
 nonzero_read!(NonZeroU16, u16);
 nonzero_read!(NonZeroU32, u32);
@@ -175,3 +135,86 @@ nonzero_read!(NonZeroI32, i32);
 nonzero_read!(NonZeroI64, i64);
 nonzero_read!(NonZeroI128, i128);
 nonzero_read!(NonZeroIsize, isize);
+
+impl SpRead for bool {
+    const STATIC_CHECKS: () = {
+        // Make sure we can safely cast between the two types
+        const _: () = assert!(size_of::<bool>() == size_of::<u8>());
+    };
+
+    const IS_SAFE_REPR: bool = true;
+    unsafe fn validate_contents<'a>(
+        _ctx: &mut SpCtx,
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
+        // Set the bool to a valid rust representation
+        let v = dst.as_ptr() as *const u8;
+
+        dst.write(*v != 0);
+
+        Ok(dst.assume_init_mut())
+    }
+
+    fn inner_from_reader<'a, R: Read + ?Sized>(
+        // Data source
+        src: &mut R,
+        // Parsing context
+        ctx: &mut SpCtx,
+        // Data that has already been read from src. Use this first
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
+        // Bools dont have a defined internal representation
+        // We must first read it as a u8 and then assign false/true to our `dst`
+
+        let u8_dst = unsafe { &mut *(dst as *mut _ as *mut MaybeUninit<u8>) };
+        <u8>::inner_from_reader(src, ctx, u8_dst)?;
+
+        let v = unsafe { Self::validate_contents(ctx, dst)? };
+
+        #[cfg(feature = "verbose")]
+        ::log::debug!("{v:?}");
+
+        Ok(v)
+    }
+}
+
+impl SpRead for AtomicBool {
+    const STATIC_CHECKS: () = {
+        // Make sure we can safely cast between the two types
+        const _: () = assert!(size_of::<AtomicBool>() == size_of::<u8>());
+    };
+
+    const IS_SAFE_REPR: bool = true;
+    unsafe fn validate_contents<'a>(
+        _ctx: &mut SpCtx,
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
+        // Set the bool to a valid rust representation
+        let v = dst.as_ptr() as *const u8;
+
+        dst.write(AtomicBool::new(*v != 0));
+
+        Ok(dst.assume_init_mut())
+    }
+
+    fn inner_from_reader<'a, R: Read + ?Sized>(
+        // Data source
+        src: &mut R,
+        // Parsing context
+        ctx: &mut SpCtx,
+        // Data that has already been read from src. Use this first
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
+        // Bools dont have a defined internal representation
+        // We must first read it as a u8 and then assign false/true to our `dst`
+        let u8_dst = unsafe { &mut *(dst as *mut _ as *mut MaybeUninit<u8>) };
+        <u8>::inner_from_reader(src, ctx, u8_dst)?;
+
+        let v = unsafe { Self::validate_contents(ctx, dst)? };
+
+        #[cfg(feature = "verbose")]
+        ::log::debug!("{v:?}");
+
+        Ok(v)
+    }
+}

@@ -1,6 +1,6 @@
 // Run with `RUST_LOG=debug cargo run --example cstring --features=verbose`
 
-use std::{ffi::CString, io::Write};
+use std::{ffi::CString, io::Write, mem::MaybeUninit};
 
 use ::simple_parse::SpRead;
 use env_logger::Builder;
@@ -11,6 +11,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         .format(|buf, record| writeln!(buf, "[{}] {}", record.level(), record.args()))
         .init();
 
+    let mut v = MaybeUninit::uninit();
     // Strings are encoded as : [str_len][str_bytes...]
     // This format is efficient as only 2 read() calls are needed
     let mut some_file: &[u8] = b"\x0B\x00\x00\x00Hello World";
@@ -31,8 +32,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
      * [DEBUG]   (u8)	108
      * [DEBUG]   (u8)	100
      * Ok("Hello World")
-    */
-    println!("{:?}", String::from_reader(&mut some_file));
+     */
+    println!("{:?}", String::from_reader(&mut some_file, &mut v));
 
     // CStrings generate a read() call for every byte until the null terminator is reached
     let mut recv_sock: &[u8] = b"Hello World\0";
@@ -51,8 +52,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
      * [DEBUG] Read(1)
      * [DEBUG] Read(1)
      * Ok("Hello World")
-    */
-    println!("{:?}", CString::from_reader(&mut recv_sock));
+     */
+    let mut v = MaybeUninit::uninit();
+    println!("{:?}", CString::from_reader(&mut recv_sock, &mut v));
 
     Ok(())
 }
