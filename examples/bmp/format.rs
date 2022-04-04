@@ -12,11 +12,6 @@ pub struct BmpHeader {
     pixel_offset: u32,
     #[sp(var_size)] // We must tell simple_parse that this custom type has a variable size or this wont compile
     dib: DIBHeader,
-    #[sp(
-        reader="readall_at_offset, pixel_offset, size", // Read the rest of the buffer into pixels
-        writer="writeall_at_offset, pixel_offset" // Write pixels for the rest of the buffer
-    )]
-    pixels: Vec<u32>,
 }
 
 use std::fmt;
@@ -27,7 +22,6 @@ impl fmt::Debug for BmpHeader {
             .field("size", &self.size)
             .field("pixel_offset", &self.pixel_offset)
             .field("dib", &self.dib)
-            .field("pixels", &self.pixels.len())
             .finish()
     }
 }
@@ -112,7 +106,7 @@ impl BitmapCompression {
                 // Call read() once for 16 bytes
                 let mut tmp = [0u8, 16];
                 // Use simple_parse provided helper
-                validate_reader_exact(&mut tmp, src)?;
+                validate_reader_exact(ctx, &mut tmp, src)?;
                 let mut checked_bytes = tmp.as_mut_ptr();
                 let alpha: u32;
                 let red: u32;
@@ -170,12 +164,12 @@ impl BitmapCompression {
 
 /// This function is called when a magic header is read or about to be written
 fn validate_magic_header(magic: &u16, ctx: &mut SpCtx) -> Result<(), SpError> {
-    println!("Validating magic bmp header !!");
     // Allow writing invalid BMP headers for fun
     if !ctx.is_reading {
         return Ok(());
     }
-
+    
+    println!("Validating magic bmp header !!");
     // BMP headers must start with two bytes containing B and M
     if *magic != 0x4D42 {
         Err(SpError::InvalidBytes)
@@ -201,7 +195,7 @@ fn parse_color_table<R: Read + ?Sized>(
     let mut res = Vec::new();
     match *bit_count {
         // 1 bit_count means there must be 2 colors
-        // 2 bit_count meants the must be 4 colors
+        // 2 bit_count means the must be 4 colors
         1 | 2 => {
             for _i in 0..(2u8).pow(*bit_count as _) {
                 res.push(RgbQuad::inner_from_reader(src, ctx)?);
@@ -224,7 +218,7 @@ fn parse_color_table<R: Read + ?Sized>(
     Ok(res)
 }
 
-/// Writes BMP a color table
+/// Writes BMP color table
 fn write_color_table<W: Write + ?Sized>(
     this: &Vec<RgbQuad>,
     ctx: &mut SpCtx,

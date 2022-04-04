@@ -88,20 +88,20 @@ struct BmpHeader {
 This tells `simple_parse` to insert a call to `validate_header(magic: &u16, ctx: &mut SpCtx)` directly after having populated the `u16` when reading and before dumping the struct as bytes when writing.
 
 ### __Custom Length (for TLV style)__
-`simple_parse` provides default implementations for dynamically sized types by simply prepending the number of elements (`count`) followed by the elements.
+`simple_parse` provides default implementations for dynamically sized types by simply prepending the number of elements (`len`) followed by the elements.
 
 i.e. A Vec<u8> with three values turns into :
 ```Rust
-// [count] | [count] * [elements]
+// [len] | [len] * [elements]
 [3u32][val1][val2][val3]
 ```
-When parsing binary formats that dont follow this layout, you can annotate your dynamically sized field with `count` :
+When parsing binary formats that dont follow this layout, you can annotate your dynamically sized field with `len` :
 ```Rust
 pub struct File {
     pub content_len: u16,
-    pub filename: String, // Use the default prepended count
-    #[sp(count="content_len")]
-    pub contents: Vec<u8>, // Use an existing field as the count
+    pub filename: String, // Use the default prepended len
+    #[sp(len="content_len")]
+    pub contents: Vec<u8>, // Use an existing field as the len
 ```
 The `content_len` field will be used to populate `contents` and `contents.len()` will be written at that offset when writing.
 ### __Custom Read/Write__

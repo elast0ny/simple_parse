@@ -63,18 +63,18 @@ fn generate_fields_write(
         Some(ref e) => is_lower_endian(e),
     };
 
-    // Holds the index of a count field's contents
+    // Holds the index of a `len` field's contents
     let mut count_field_vals = Vec::with_capacity(fields.len());
     count_field_vals.resize(fields.len(), None);
 
-    // Holds the index of a count field's index
+    // Holds the index of a `len` field's index
     let mut count_field_idx = Vec::with_capacity(fields.len());
     count_field_idx.resize(fields.len(), None);
 
     let mut simple_field_names = Vec::with_capacity(fields.len());
     let fields: Vec<&syn::Field> = fields.iter().collect();
 
-    // Iterate through fields to link count fields and populate validation functions
+    // Iterate through fields to link `len` fields and populate validation functions
     for (idx, field) in fields.iter().enumerate() {
         let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
         let field_ident = generate_field_name(field, idx, prefix, false);
@@ -99,7 +99,7 @@ fn generate_fields_write(
             None => {},
         };
 
-        if let Some(count_field_name) = field_attrs.count.as_ref() {
+        if let Some(count_field_name) = field_attrs.len.as_ref() {
             let mut field_idx = idx;
             for i in 0..idx {
                 if count_field_name.as_str() == simple_field_names[i].as_str() {
@@ -107,14 +107,14 @@ fn generate_fields_write(
                     break;
                 }
             }
-            // count field not found
+            // `len` field not found
             if field_idx == idx {
-                panic!("#[sp(count)] annotation on field '{}' referers to an unknown field '{}'. Valid values are {:?}", &simple_field_names[idx], count_field_name, &simple_field_names[..idx]);
+                panic!("#[sp(len)] annotation on field '{}' referers to an unknown field '{}'. Valid values are {:?}", &simple_field_names[idx], count_field_name, &simple_field_names[..idx]);
             }
 
-            // Save link from count field to this field
+            // Save link from `len` field to this field
             count_field_vals[field_idx] = Some(idx);
-            // Save link from this field to its count field
+            // Save link from this field to its `len` field
             count_field_idx[idx] = Some(field_idx);
         }
     }
@@ -136,9 +136,9 @@ fn generate_fields_write(
             Some(ref e) => is_lower_endian(e),
         }; 
 
-        let count_value;
+        let len_value;
 
-        // If this field is a count field, write the len instead
+        // If this field is a `len` field, write the len instead
         if let Some(field_idx) = count_field_vals[idx] {
             let content_field = fields[field_idx];
             let content_ty = strip_reference(&content_field.ty);
@@ -179,7 +179,7 @@ fn generate_fields_write(
                     };
                 }
             };
-            // Create temporary var to hold the real count value
+            // Create temporary var to hold the real `len` value
             // then write this value
             write_code.extend(quote! {
                 #count_decl
@@ -188,14 +188,14 @@ fn generate_fields_write(
             });
             continue;
         } else if let Some(field_idx) = count_field_idx[idx] {
-            // The current field is annotated with count.
-            // Pass the count field's value as Some to its `inner_to_writer()`
+            // The current field is annotated with `len`.
+            // Pass the `len` field's value as Some to its `inner_to_writer()`
             let count_field = fields[field_idx];
             let count_ident = generate_field_name(count_field, field_idx, None, false);
-            count_value = quote!{Some(#count_ident as usize)};
+            len_value = quote!{Some(#count_ident as usize)};
         } else {
-            // current field is not annotated with count
-            count_value = quote!{None};
+            // current field is not annotated with `len`
+            len_value = quote!{None};
         }
 
         // Pick between custom write or default
@@ -221,7 +221,7 @@ fn generate_fields_write(
         // Add the generated code for this field
         write_code.extend(quote! {
             ctx.is_little_endian = #is_output_le;
-            ctx.count = #count_value;
+            ctx.len = #len_value;
             written_len += #write_call?;
         })
     }

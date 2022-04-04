@@ -57,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // The generated data should match the original data
+    //assert_eq!(orig_data.len(), generated_data.len());
     assert_eq!(orig_data, generated_data.as_slice());
 
     Ok(())

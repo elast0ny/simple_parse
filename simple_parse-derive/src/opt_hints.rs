@@ -84,13 +84,45 @@ pub (crate) fn generate_struct_hints(
     
     let mut got_var = false;
 
+    r.static_size = quote!{0};
+    for field in fields.iter().rev() {
+        
+        let field_type = strip_lifetimes(&field.ty);
+        let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
+        let field_size = get_static_size(&field_type);
+
+        //Add this fields size
+        r.static_size.extend(quote!{#field_size});
+
+        // If field has a `len` annotation, remove the COUNT_SIZE from it
+        if field_attrs.len.is_some() {
+            r.static_size.extend(quote!{
+                - core::mem::size_of::<::simple_parse::DefaultCountType>()
+            });
+        } else {
+
+        }
+
+        let cur_size = r.static_size.clone();
+
+        r.static_size.extend(quote!{
+            #field_size + if !#field_type::IS_VAR_SIZE {
+                #cur_size
+            } else {
+                0
+            }
+        });
+    }
+    
+
     // Add up each field's static_size until we hit a variable size field
     for (idx, field) in fields.iter().enumerate() {
         //let field_name = &field.ident;
         let field_type = strip_lifetimes(&field.ty);
         let field_attrs: FieldAttributes = FromField::from_field(&field).unwrap();
         let is_var_type = is_var_size(&field_type, Some(&field_attrs));
-        
+        let cur_size = get_static_size(&field_type);
+
         // Keep adding sizes as long as we havent hit a dynamically sized field
         if !got_var {
             if idx > 0 {
@@ -105,10 +137,10 @@ pub (crate) fn generate_struct_hints(
             }
             
             
-            // If field has a count annotation, remove the COUNT_SIZE from it
-            if field_attrs.count.is_some() {
+            // If field has a `len` annotation, remove the COUNT_SIZE from it
+            if field_attrs.len.is_some() {
                 r.static_size.extend(quote!{
-                    - <#field_type as ::simple_parse::SpOptHints>::COUNT_SIZE
+                    - core::mem::size_of::<::simple_parse::DefaultCountType>()
                 });
             }
         }
@@ -119,13 +151,12 @@ pub (crate) fn generate_struct_hints(
             got_var = true;
             if field_attrs.reader.is_none() {
                 r.const_asserts.extend(quote!{
-                    ::simple_parse::sa::const_assert!(<#field_type as ::simple_parse::SpOptHints>::IS_VAR_SIZE == true);
-                    
+                    //::simple_parse::sa::const_assert!(<#field_type as ::simple_parse::SpOptHints>::IS_VAR_SIZE == true); 
                 });
             }
         } else if field_attrs.reader.is_none() {
             r.const_asserts.extend(quote!{
-                ::simple_parse::sa::const_assert!(<#field_type as ::simple_parse::SpOptHints>::IS_VAR_SIZE == false); 
+                //::simple_parse::sa::const_assert!(<#field_type as ::simple_parse::SpOptHints>::IS_VAR_SIZE == false); 
             });
         }
     }

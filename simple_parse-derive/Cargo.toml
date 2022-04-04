@@ -25,4 +25,3 @@ quote = "1.*"
 proc-macro2 = {version = "1.*", features = ["span-locations"]}
 darling = "0.*"
 log = {version = "0", optional = true}
-static_assertions = "1"

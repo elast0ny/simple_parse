@@ -1,14 +1,7 @@
-use std::io::{Cursor, Read, Write};
+use std::io::{Read, Write};
 
 #[cfg(feature = "verbose")]
 pub use log::debug;
-
-#[doc(hidden)]
-/// Allows for compile time assertions in the generated derive code
-pub use static_assertions as sa;
-
-#[cfg(test)]
-mod tests;
 
 mod error;
 pub use error::*;
@@ -30,8 +23,8 @@ pub struct SpCtx {
     pub is_reading: bool,
     /// If the abitrary input/output bytes should be treated as little endian
     pub is_little_endian: bool,
-    /// If a dynamically sized Self uses an external count field, and what its contents are
-    pub count: Option<usize>,
+    /// If a dynamically sized Self uses an external `len` field, and what its contents are
+    pub len: Option<usize>,
 }
 impl Default for SpCtx {
     fn default() -> Self {
@@ -39,7 +32,7 @@ impl Default for SpCtx {
             cursor: 0,
             is_reading: true,
             is_little_endian: cfg!(target_endian = "little"),
-            count: None,
+            len: None,
         }
     }
 }
@@ -55,133 +48,42 @@ pub type DefaultCountType = u32;
 pub const MAX_ALLOC_SIZE: usize = 4096;
 
 /// Provides optimization hints used by [SpRead] traits.
-///
-/// # Safety
-/// When not using defaults, implementors must be very careful not to return invalid values
-/// as it may lead to buffer over reads (e.g. setting `STATIC_SIZE` to 4 and reading 8 bytes in the `unchecked` readers)
-pub unsafe trait SpOptHints {
+pub trait SpOptHints {
     /// Whether the type has a variable size
     const IS_VAR_SIZE: bool = true;
     /// How many bytes the `unchecked` parsing functions can assume are valid
     const STATIC_SIZE: usize = 0;
-    /// Used to substract from STATIC_SIZE when a count is provided
-    const COUNT_SIZE: usize = 0;
 }
 
 /// Parses `Self` from a source implementing [Read](std::io::Read) ([File](std::fs::File),[TcpStream](std::net::TcpStream), etc...)
 ///
 /// This trait is most usefull when the bytes are coming from some kind of IO stream.
 /// When possible, it is recommend to use [SpReadRaw] instead for better performance.
-pub trait SpRead {
+pub trait SpRead: Sized + SpOptHints {
+
+    #[doc(hidden)]
+    const STATIC_CHECKS: () = ();
+
     /// Converts bytes from a [Reader](std::io::Read) into `Self`
     ///
-    /// This functions allows specifying endianness and count fields as opposed to using defaults with `from_reader`
+    /// This functions allows specifying endianness and `len` fields as opposed to using defaults with `from_reader`
     fn inner_from_reader<R: Read + ?Sized>(
+        // Data source
         src: &mut R,
+        // Parsing context
         ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError>
-    where
-        Self: Sized + SpOptHints;
-
-    /// Converts bytes from a `&mut Read` into `Self` with some assumptions on checked_bytes
-    ///
-    /// # Safety
-    /// This function assumes that checked_bytes points to at least Self::STATIC_SIZE bytes.
-    ///
-    /// If this is implemented on a dynamic type, the implementors MUST check if count is provided.
-    /// If it is provided, Self::COUNT_SIZE less bytes can be trusted from checked_bytes.
-    unsafe fn inner_from_reader_unchecked<R: Read + ?Sized>(
-        checked_bytes: *mut u8,
-        src: &mut R,
-        ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError>
-    where
-        Self: Sized + SpOptHints;
+        // Data that has already been read from src. Use this first
+        existing: &[u8],
+    ) -> Result<Self, crate::SpError>;
 
     /// Converts bytes from a `&mut Read` into `Self`
     fn from_reader<R: Read + ?Sized>(src: &mut R) -> Result<Self, crate::SpError>
-    where
-        Self: Sized + SpOptHints,
     {
-        Self::inner_from_reader(src, &mut SpCtx::default())
-    }
-}
-
-/// Parses `Self` from a [Cursor<&\[u8\]>](std::io::Cursor)
-pub trait SpReadRaw<'b> {
-    /// Converts bytes from a `Cursor<&[u8]>` into `Self`
-    ///
-    /// This functions allows specifying endianness and count fields as opposed to using defaults with `from_slice`
-    fn inner_from_slice(
-        src: &mut Cursor<&'b [u8]>,
-        ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError>
-    where
-        Self: Sized + SpOptHints;
-
-    /// Converts bytes from a `Cursor<&[u8]>` into `Self` with some assumptions on checked_bytes
-    ///
-    /// # Safety
-    /// This function assumes that checked_bytes points to at least Self::STATIC_SIZE bytes.
-    ///
-    /// If this is implemented on a dynamic type, the implementors MUST check if count is provided.
-    /// If it is provided, Self::COUNT_SIZE less bytes can be trusted from checked_bytes.
-    ///
-    /// This function also allows returning references into the `Cursor<&[u8]>` when `Self` is a reference `&T`.
-    /// This should not be done if `Self` itself contains non-primitive types, references, slices, etc...
-    unsafe fn inner_from_slice_unchecked(
-        checked_bytes: *const u8,
-        src: &mut Cursor<&'b [u8]>,
-        ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError>
-    where
-        Self: Sized + SpOptHints;
-
-    /// Converts bytes from a `Cursor<&[u8]>` into `Self`
-    fn from_slice(src: &mut Cursor<&'b [u8]>) -> Result<Self, crate::SpError>
-    where
-        Self: Sized + SpOptHints,
-    {
-        Self::inner_from_slice(src, &mut SpCtx::default())
-    }
-}
-
-/// Parses `Self` from a [Cursor<&mut \[u8\]>](std::io::Cursor)
-pub trait SpReadRawMut<'b> {
-    /// Converts bytes from a `Cursor<&mut [u8]>` into `Self`
-    ///
-    /// This functions allows specifying endianness and count fields as opposed to using defaults with `from_slice`
-    fn inner_from_mut_slice(
-        src: &mut Cursor<&'b mut [u8]>,
-        ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError>
-    where
-        Self: Sized + SpOptHints;
-
-    /// Converts bytes from a `Cursor<&mut [u8]>` into `Self` with some assumptions on checked_bytes
-    ///
-    /// # Safety
-    /// This function assumes that checked_bytes points to at least Self::STATIC_SIZE bytes.
-    ///
-    /// If this is implemented on a dynamic type, the implementors MUST check if count is provided.
-    /// If it is provided, Self::COUNT_SIZE less bytes can be trusted from checked_bytes.
-    ///
-    /// This function also allows returning references into the `Cursor<&[u8]>` when `Self` is a reference `&T` or `&mut T`.
-    /// This should not be done if `Self` itself contains non-primitive types, references, slices, etc...
-    unsafe fn inner_from_mut_slice_unchecked(
-        checked_bytes: *mut u8,
-        src: &mut Cursor<&'b mut [u8]>,
-        ctx: &mut SpCtx,
-    ) -> Result<Self, crate::SpError>
-    where
-        Self: Sized + SpOptHints;
-
-    /// Converts bytes from a `Cursor<&mut [u8]>` into `Self`
-    fn from_mut_slice(src: &mut Cursor<&'b mut [u8]>) -> Result<Self, crate::SpError>
-    where
-        Self: Sized + SpOptHints,
-    {
-        Self::inner_from_mut_slice(src, &mut SpCtx::default())
+        let mut ctx = SpCtx::default();
+        let r = Self::inner_from_reader(src, &mut ctx, &[]);
+        #[cfg(feature="verbose")]
+        ::log::debug!("  Read {} bytes", ctx.cursor);
+        r
     }
 }
 
@@ -196,6 +98,11 @@ pub trait SpWrite {
 
     /// Writes the byte representation for Self into a `&mut Write`
     fn to_writer<W: Write + ?Sized>(&self, dst: &mut W) -> Result<usize, crate::SpError> {
-        self.inner_to_writer(&mut SpCtx::default(), dst)
+        let mut ctx = SpCtx::default();
+        let r = self.inner_to_writer(&mut ctx, dst);
+        #[cfg(feature="verbose")]
+        ::log::debug!("  Wrote {} bytes", ctx.cursor);
+        
+        r
     }
 }

@@ -57,12 +57,12 @@ pub(crate) struct FieldAttributes {
     /// ```Rust
     /// struct Test {
     ///     num_options: u8,
-    ///     #[sp(count="num_options")]
+    ///     #[sp(len="num_options")]
     ///     options: Vec<Options>,
     /// }
     /// ```
     #[darling(default)]
-    pub count: Option<String>,
+    pub len: Option<String>,
 
     /// Allows for custom validation code to run directly after parsing or before writing a field.
     /// The provided value will be parsed as a comma seperated function name optionnaly followed by field names.

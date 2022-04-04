@@ -12,25 +12,9 @@ use crate::*;
 /// This macro also implements the trait for references and slices of &typ
 macro_rules! impl_static {
     ($typ:ty) => {
-        unsafe impl SpOptHints for $typ {
+        impl SpOptHints for $typ {
             const IS_VAR_SIZE: bool = false;
             const STATIC_SIZE: usize = size_of::<$typ>();
-        }
-        unsafe impl SpOptHints for &$typ {
-            const IS_VAR_SIZE: bool = false;
-            const STATIC_SIZE: usize = size_of::<$typ>();
-        }
-        unsafe impl SpOptHints for &mut $typ {
-            const IS_VAR_SIZE: bool = false;
-            const STATIC_SIZE: usize = size_of::<$typ>();
-        }
-        unsafe impl SpOptHints for &[$typ] {
-            const STATIC_SIZE: usize = DefaultCountType::STATIC_SIZE;
-            const COUNT_SIZE: usize = DefaultCountType::STATIC_SIZE;
-        }
-        unsafe impl SpOptHints for &mut [$typ] {
-            const STATIC_SIZE: usize = DefaultCountType::STATIC_SIZE;
-            const COUNT_SIZE: usize = DefaultCountType::STATIC_SIZE;
         }
     };
 }
@@ -49,7 +33,7 @@ impl_static!(i128);
 impl_static!(isize);
 impl_static!(f32);
 impl_static!(f64);
-unsafe impl SpOptHints for bool {
+impl SpOptHints for bool {
     const IS_VAR_SIZE: bool = false;
     const STATIC_SIZE: usize = <u8>::STATIC_SIZE;
 }
@@ -64,7 +48,7 @@ impl_static!(AtomicI16);
 impl_static!(AtomicI32);
 impl_static!(AtomicI64);
 impl_static!(AtomicIsize);
-unsafe impl SpOptHints for AtomicBool {
+impl SpOptHints for AtomicBool {
     const IS_VAR_SIZE: bool = false;
     const STATIC_SIZE: usize = <bool>::STATIC_SIZE;
 }
@@ -84,28 +68,22 @@ impl_static!(NonZeroIsize);
 
 // Implements SpOptHints on dynamically sized types.
 // All dynamically sized types have at least DefaultCountType as part of their STATIC_SIZE
-// because this amount gets substracted from checked_bytes when a count it provided
 macro_rules! impl_dynamic {
     ($typ:ty$(, $generics:tt $(: $bound:ident $(+ $other:ident)*)?)*) => {
-        unsafe impl<$($generics :SpOptHints $(+ $bound$(+ $other)*)*),*> SpOptHints for $typ {
+        impl<$($generics :SpOptHints $(+ $bound$(+ $other)*)*),*> SpOptHints for $typ {
             const STATIC_SIZE: usize = DefaultCountType::STATIC_SIZE;
-            const COUNT_SIZE: usize = DefaultCountType::STATIC_SIZE;
         }
     }
 }
 
 // There should at least be 1 byte available (potentially null terminator) for CStrings
-unsafe impl SpOptHints for &CStr {
-    const STATIC_SIZE: usize = <u8>::STATIC_SIZE;
-}
-unsafe impl SpOptHints for CString {
+impl SpOptHints for CString {
     const STATIC_SIZE: usize = <u8>::STATIC_SIZE;
 }
 impl_dynamic!(&str);
 impl_dynamic!(String);
-unsafe impl<T> SpOptHints for Option<T> {
+impl<T> SpOptHints for Option<T> {
     const STATIC_SIZE: usize = <bool>::STATIC_SIZE;
-    const COUNT_SIZE: usize = <bool>::STATIC_SIZE;
 }
 
 impl_dynamic!(Vec<T>, T);

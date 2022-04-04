@@ -12,12 +12,6 @@ mod write;
 
 pub(crate) use attributes::*;
 
-pub(crate) enum ReaderType {
-    Reader,
-    Raw,
-    RawMut,
-}
-
 #[proc_macro_derive(SpOptHints, attributes(sp))]
 /// Implements SpOptHints
 ///
@@ -34,25 +28,7 @@ pub fn generate_opt_hints(input: TokenStream) -> TokenStream {
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_read(input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as DeriveInput);
-    let res = read::generate(&mut input, ReaderType::Reader);
-    proc_macro::TokenStream::from(res)
-}
-#[proc_macro_derive(SpReadRaw, attributes(sp))]
-/// Implements SpReadRaw
-///
-/// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
-pub fn generate_readraw(input: TokenStream) -> TokenStream {
-    let mut input = parse_macro_input!(input as DeriveInput);
-    let res = read::generate(&mut input, ReaderType::Raw);
-    proc_macro::TokenStream::from(res)
-}
-#[proc_macro_derive(SpReadRawMut, attributes(sp))]
-/// Implements SpReadRawMut
-///
-/// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
-pub fn generate_readrawmut(input: TokenStream) -> TokenStream {
-    let mut input = parse_macro_input!(input as DeriveInput);
-    let res = read::generate(&mut input, ReaderType::RawMut);
+    let res = read::generate(&mut input);
     proc_macro::TokenStream::from(res)
 }
 
@@ -181,41 +157,18 @@ pub(crate) fn smallest_type_for_num(num: usize) -> &'static str {
         "u16"
     } else if num <= u32::MAX as _ {
         "u32"
-    } else {
+    } else if num <= u64::MAX as _ {
         "u64"
+    } else {
+        "u128"
     }
 }
 
-pub(crate) fn get_parse_fn_name(
-    reader_type: &ReaderType,
-    unchecked: bool,
-) -> proc_macro2::TokenStream {
-    match (unchecked, reader_type) {
-        (true, ReaderType::Reader) => {
-            quote! {inner_from_reader_unchecked}
-        }
-        (true, ReaderType::Raw) => {
-            quote! {inner_from_slice_unchecked}
-        }
-        (true, ReaderType::RawMut) => {
-            quote! {inner_from_mut_slice_unchecked}
-        }
-        (false, ReaderType::Reader) => {
-            quote! {inner_from_reader}
-        }
-        (false, ReaderType::Raw) => {
-            quote! {inner_from_slice}
-        }
-        (false, ReaderType::RawMut) => {
-            quote! {inner_from_mut_slice}
-        }
-    }
-}
-
+/// Returns whether a type is variably sized
 pub(crate) fn is_var_size(typ: &Type, attrs: Option<&FieldAttributes>) -> bool {
     if let Some(attrs) = attrs {
-        // Types that take a count are always variably sized
-        if attrs.count.is_some() || attrs.var_size.is_some() || attrs.reader.is_some() {
+        // Types that take a `len` are always variably sized
+        if attrs.len.is_some() || attrs.var_size.is_some() || attrs.reader.is_some() {
             return true;
         }
     }

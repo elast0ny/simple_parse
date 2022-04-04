@@ -8,7 +8,7 @@ pub enum SpError {
     UnknownEnumVariant,
     /// There is not enough space to write T into the writer or to read T from the reader
     NotEnoughSpace,
-    /// An annotated count field's type is too small to fit the number of elements
+    /// An annotated `len` field's type is too small to fit the number of elements
     CountFieldOverflow,
     /// The data contained enough bytes but the contents were invalid
     InvalidBytes,
@@ -24,7 +24,7 @@ impl fmt::Display for SpError {
             }
             SpError::CountFieldOverflow => write!(
                 f,
-                "The count field's type is too small for the number of items !"
+                "The `len` field's type is too small for the number of items !"
             ),
             SpError::InvalidBytes => write!(f, "Failed to parse the bytes into the wanted type"),
             SpError::BadAlignment => write!(f, "Input bytes are misaligned"),
@@ -33,6 +33,6 @@ impl fmt::Display for SpError {
 }
 impl error::Error for SpError {
     fn cause(&self) -> Option<&dyn error::Error> {
-        Some(self)
+        None
     }
 }
