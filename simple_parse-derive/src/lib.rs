@@ -12,8 +12,7 @@ mod write;
 pub(crate) use attributes::*;
 
 #[proc_macro_derive(SpRead, attributes(sp))]
-/// Implements SpRead and SpOptHints
-///
+/// Implements SpRead on structs and enums
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_read(input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as DeriveInput);
@@ -22,7 +21,7 @@ pub fn generate_read(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_derive(SpWrite, attributes(sp))]
-/// Implements SpWrite
+/// Implements SpWrite on structs and enums
 ///
 /// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
 pub fn generate_write(input: TokenStream) -> TokenStream {
@@ -154,7 +153,7 @@ pub(crate) fn smallest_type_for_num(num: usize) -> &'static str {
 }
 
 pub (crate) enum AllowFields {
-    /// Allow references to any field in the struct
+    /// Allow refer ences to any field in the struct
     All,
     /// Only allow references to fields before the current
     BeforeCurrent,

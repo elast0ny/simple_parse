@@ -52,7 +52,7 @@ pub type DefaultCountType = u32;
 /// MAX_ALLOC_SIZE will be read at a time instead of allocating INT_MAX bytes in one go.
 pub const MAX_ALLOC_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 
-/// Parses `Self` from a source implementing [Read](std::io::Read) ([File](std::fs::File),[TcpStream](std::net::TcpStream), etc...)
+/// Parses untrusted bytes from a [Reader](std::io::Read) into a `Self`
 ///
 /// This trait is most usefull when the bytes are coming from some kind of IO stream.
 /// When possible, it is recommend to use [SpReadRaw] instead for better performance.
@@ -78,7 +78,7 @@ pub trait SpRead: Sized {
         Ok(v)
     }
 
-    /// Converts bytes from a [Reader](std::io::Read) into `Self` with a provided SpCtx
+    /// Parses bytes from a [Reader](std::io::Read) into `dst` and returns a valid
     fn inner_from_reader<'a, R: Read + ?Sized>(
         src: &mut R,
         ctx: &mut SpCtx,
@@ -94,7 +94,7 @@ pub trait SpRead: Sized {
     }
 }
 
-/// Writes `T` into a [Writer](std::io::Write) ([File](std::fs::File),[TcpStream](std::net::TcpStream), etc...)
+/// Writes the binary representation of `Self` into a [Writer](std::io::Write)
 pub trait SpWrite {
     /// Writes the byte representation for Self into a `&mut Write` with control over endianness
     fn inner_to_writer<W: Write + ?Sized>(

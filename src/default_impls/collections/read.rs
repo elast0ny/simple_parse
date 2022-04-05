@@ -89,6 +89,58 @@ impl<T: SpRead> SpRead for Option<T> {
     }
 }
 
+impl<const SIZE: usize, T: SpRead> SpRead for [T; SIZE] {
+    fn inner_from_reader<'a, R: Read + ?Sized>(
+        src: &mut R,
+        ctx: &mut SpCtx,
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
+        if T::IS_SAFE_REPR {
+            // Convert our array into a mutable u8 slice
+            let dst_bytes = unsafe {
+                core::slice::from_raw_parts_mut(
+                    dst.as_mut_ptr() as *mut _ as *mut u8, size_of::<T>() * SIZE)
+            };
+
+            // Read all items into our allocation
+            if let Err(e) = src.read_exact(dst_bytes) {
+                return Err(SpError::ReadFailed(e));
+            }
+            #[cfg(feature = "verbose")]
+            ::log::debug!("  read({})", dst_bytes.len());
+            
+            ctx.cursor += dst_bytes.len();
+            
+            // Convert our items into MaybeUninit<T> to prevent UB
+            // as they are no necessarily valid yet
+            let vals = unsafe {
+                core::slice::from_raw_parts_mut(
+                    dst.as_mut_ptr() as *mut _ as *mut MaybeUninit<T>, SIZE)
+            };
+            
+            // Validate every item's content
+            for v in vals.iter_mut() {
+                unsafe { <T>::validate_contents(ctx, v)? };
+            }
+        } else {
+            // Convert our items into MaybeUninit<T>
+            let vals = unsafe {
+                core::slice::from_raw_parts_mut(
+                    dst.as_mut_ptr() as *mut _ as *mut MaybeUninit<T>, SIZE)
+            };
+            
+            // Read & validate every item 1 by one
+            for v in vals.iter_mut() {
+                <T>::inner_from_reader(src, ctx, v)?;
+            }
+        }
+
+        unsafe {
+            Ok(dst.assume_init_mut())
+        }
+    }
+}
+
 impl<T: SpRead> SpRead for Vec<T> {
     fn inner_from_reader<'a, R: Read + ?Sized>(
         src: &mut R,
