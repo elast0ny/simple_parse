@@ -39,6 +39,9 @@ pub enum Message {
 pub fn main() {
     /* <...> */
     
+    // Declare a destination buffer to use when parsing
+    let mut dst: MaybeUninit<Message> = MaybeUninit::uninit();
+
     loop {
         // Receive & parse bytes from the socket as a `Message` using SpRead
         let msg = Message::from_reader(&mut sock, &mut dst).expect("[server] Failed to receive message");
