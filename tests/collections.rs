@@ -9,7 +9,6 @@ fn collections() {
         .to_le_bytes()
         .to_vec();
     orig.extend(s.as_bytes());
-    println!("{orig:X?}");
 
     let mut tmp = MaybeUninit::uninit();
     assert_eq!(

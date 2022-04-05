@@ -1,6 +1,6 @@
 
 use simple_parse::*;
-use std::io::Cursor;
+use std::{io::Cursor, mem::MaybeUninit};
 
 #[test]
 fn derive_static() {
@@ -19,20 +19,22 @@ fn derive_static() {
         v3: u128,
         v4: f32,
     }
+    const STATIC_STRUCT_SIZE: usize = 4 + 1 + 16 + 4;
 
     // Try to parse with 1 byte missing
-    assert!(StaticStruct::from_reader(&mut Cursor::new(&bytes[..bytes.len()-1])).is_err());   
+    let mut tmp = MaybeUninit::uninit();
+    assert!(StaticStruct::from_reader(&mut Cursor::new(&bytes[..bytes.len()-1]), &mut tmp).is_err());   
 
     let mut ctx = SpCtx::default();
     // Make sure every field is parsed properly
-    let v = StaticStruct::inner_from_reader(&mut Cursor::new(bytes), &mut ctx).unwrap();
-    assert_eq!(v, StaticStruct {
+    let v = StaticStruct::inner_from_reader(&mut Cursor::new(bytes), &mut ctx, &mut tmp).unwrap();
+    assert_eq!(v, &mut StaticStruct {
         v1: 1,
         v2: 2,
         v3: 3,
         v4: 0.0,
     });
-    assert_eq!(ctx.cursor, StaticStruct::STATIC_SIZE, "ctx.cursor was not advanced properly while reading");
+    assert_eq!(ctx.cursor, STATIC_STRUCT_SIZE, "ctx.cursor was not advanced properly while reading");
     
     // Convert the struct back to bytes
     ctx.is_reading = false;
@@ -40,7 +42,7 @@ fn derive_static() {
     let mut dst = Vec::new();
     v.inner_to_writer(&mut ctx, &mut dst).unwrap();
     assert_eq!(&dst, bytes);
-    assert_eq!(ctx.cursor, StaticStruct::STATIC_SIZE, "ctx.cursor was not advanced properly while writing");
+    assert_eq!(ctx.cursor, STATIC_STRUCT_SIZE, "ctx.cursor was not advanced properly while writing");
 
     let bytes: &[u8] = &[
         123,
@@ -57,12 +59,13 @@ fn derive_static() {
     }
 
     // Try to parse with 1 byte missing
-    assert!(Nested::from_reader(&mut Cursor::new(&bytes[..bytes.len()-1])).is_err());   
+    let mut tmp = MaybeUninit::uninit();
+    assert!(Nested::from_reader(&mut Cursor::new(&bytes[..bytes.len()-1]), &mut tmp).is_err());   
 
     let mut ctx = SpCtx::default();
     // Make sure every field is parsed properly
-    let v = Nested::inner_from_reader(&mut Cursor::new(bytes), &mut ctx).unwrap();
-    assert_eq!(v, Nested::Nest(
+    let v = Nested::inner_from_reader(&mut Cursor::new(bytes), &mut ctx, &mut tmp).unwrap();
+    assert_eq!(v, &mut Nested::Nest(
         StaticStruct {
             v1: 1,
             v2: 2,
@@ -70,7 +73,7 @@ fn derive_static() {
             v4: 0.0,
         })
     );
-    assert_eq!(ctx.cursor, Nested::STATIC_SIZE, "ctx.cursor was not advanced properly while reading");
+    assert_eq!(ctx.cursor, 1 + STATIC_STRUCT_SIZE, "ctx.cursor was not advanced properly while reading");
 
     // Convert the struct back to bytes
     ctx.is_reading = false;
@@ -78,7 +81,7 @@ fn derive_static() {
     let mut dst = Vec::new();
     v.inner_to_writer(&mut ctx, &mut dst).unwrap();
     assert_eq!(&dst, bytes);
-    assert_eq!(ctx.cursor, Nested::STATIC_SIZE, "ctx.cursor was not advanced properly while writing");
+    assert_eq!(ctx.cursor, 1 + STATIC_STRUCT_SIZE, "ctx.cursor was not advanced properly while writing");
 }
 
 #[test]
@@ -96,16 +99,17 @@ fn derive_var_size() {
     }
 
     // Try to parse with 1 byte missing
-    assert!(BasicVar::from_reader(&mut Cursor::new(&bytes[..bytes.len()-1])).is_err());   
+    let mut tmp = MaybeUninit::uninit();
+    assert!(BasicVar::from_reader(&mut Cursor::new(&bytes[..bytes.len()-1]), &mut tmp).is_err());   
 
     let mut ctx = SpCtx::default();
     // Make sure every field is parsed properly
-    let v = BasicVar::inner_from_reader(&mut Cursor::new(bytes), &mut ctx).unwrap();
-    assert_eq!(v, BasicVar {
+    let v = BasicVar::inner_from_reader(&mut Cursor::new(bytes), &mut ctx, &mut tmp).unwrap();
+    assert_eq!(v, &mut BasicVar {
         v1: 1,
         v2: vec![1,2,3,4,5],
     });
-    assert_eq!(ctx.cursor, BasicVar::STATIC_SIZE + 5, "ctx.cursor was not advanced properly while reading");
+    assert_eq!(ctx.cursor, 4 + 4 + 5, "ctx.cursor was not advanced properly while reading");
     
     // Convert the struct back to bytes
     ctx.is_reading = false;
@@ -113,7 +117,7 @@ fn derive_var_size() {
     let mut dst = Vec::new();
     v.inner_to_writer(&mut ctx, &mut dst).unwrap();
     assert_eq!(&dst, bytes);
-    assert_eq!(ctx.cursor, BasicVar::STATIC_SIZE + 5, "ctx.cursor was not advanced properly while writing");
+    assert_eq!(ctx.cursor, 4 + 4 + 5, "ctx.cursor was not advanced properly while writing");
 }
 
 #[test]
@@ -133,17 +137,18 @@ fn derive_var_size_custom_len() {
     }
 
     // Try to parse with 1 byte missing
-    assert!(CustomLenVar::from_reader(&mut Cursor::new(&bytes[..bytes.len()-1])).is_err());   
+    let mut tmp = MaybeUninit::uninit();
+    assert!(CustomLenVar::from_reader(&mut Cursor::new(&bytes[..bytes.len()-1]), &mut tmp).is_err());   
 
     let mut ctx = SpCtx::default();
     // Make sure every field is parsed properly
-    let v = CustomLenVar::inner_from_reader(&mut Cursor::new(bytes), &mut ctx).unwrap();
-    assert_eq!(v, CustomLenVar {
+    let v = CustomLenVar::inner_from_reader(&mut Cursor::new(bytes), &mut ctx, &mut tmp).unwrap();
+    assert_eq!(v, &mut CustomLenVar {
         v1: 5,
         v2: 1,
         v3: vec![1,2,3,4,5],
     });
-    assert_eq!(ctx.cursor, CustomLenVar::STATIC_SIZE + 5, "ctx.cursor was not advanced properly while reading");
+    assert_eq!(ctx.cursor, 4 + 2 + 5, "ctx.cursor was not advanced properly while reading");
     
     // Convert the struct back to bytes
     ctx.is_reading = false;
@@ -151,5 +156,5 @@ fn derive_var_size_custom_len() {
     let mut dst = Vec::new();
     v.inner_to_writer(&mut ctx, &mut dst).unwrap();
     assert_eq!(&dst, bytes);
-    assert_eq!(ctx.cursor, CustomLenVar::STATIC_SIZE + 5, "ctx.cursor was not advanced properly while writing");
+    assert_eq!(ctx.cursor, 4 + 2 + 5, "ctx.cursor was not advanced properly while writing");
 }

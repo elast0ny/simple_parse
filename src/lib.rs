@@ -17,6 +17,8 @@ pub use helpers::*;
 
 pub use simple_parse_derive::*;
 
+const DEFAULT_IS_LITTLE_ENDIAN: bool = true;
+
 /// A context passed around [SpRead] and [SpWrite] functions
 pub struct SpCtx {
     /// How many bytes have been read/written so far
@@ -34,7 +36,7 @@ impl Default for SpCtx {
         Self {
             cursor: 0,
             is_reading: true,
-            is_little_endian: cfg!(target_endian = "little"),
+            is_little_endian: DEFAULT_IS_LITTLE_ENDIAN,
             len: None,
         }
     }
@@ -48,7 +50,7 @@ pub type DefaultCountType = u32;
 /// This is a safeguard against reading malicious/malformed dynamically sized types.
 /// For example, when reading a String that says it contains INT_MAX characters, chunks of
 /// MAX_ALLOC_SIZE will be read at a time instead of allocating INT_MAX bytes in one go.
-pub const MAX_ALLOC_SIZE: usize = 4096;
+pub const MAX_ALLOC_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 
 /// Parses `Self` from a source implementing [Read](std::io::Read) ([File](std::fs::File),[TcpStream](std::net::TcpStream), etc...)
 ///

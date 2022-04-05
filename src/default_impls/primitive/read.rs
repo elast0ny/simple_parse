@@ -21,7 +21,12 @@ macro_rules! primitive_read {
                     raw_bytes.reverse();
                 }
 
-                Ok(dst.assume_init_mut())
+                let v = dst.assume_init_mut();
+
+                #[cfg(feature = "verbose")]
+                ::log::debug!("0x{v:X?}");
+
+                Ok(v)
             }
 
             fn inner_from_reader<'a, R: Read + ?Sized>(
@@ -35,9 +40,6 @@ macro_rules! primitive_read {
                 static_size_from_reader::<Self, R, { size_of::<$typ>() }>(src, ctx, dst)?;
 
                 let v = unsafe { Self::validate_contents(ctx, dst)? };
-
-                #[cfg(feature = "verbose")]
-                ::log::debug!("0x{v:X?}");
 
                 Ok(v)
             }

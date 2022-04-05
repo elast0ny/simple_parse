@@ -89,6 +89,99 @@ impl<T: SpRead> SpRead for Option<T> {
     }
 }
 
+impl<T: SpRead> SpRead for Vec<T> {
+    fn inner_from_reader<'a, R: Read + ?Sized>(
+        src: &mut R,
+        ctx: &mut SpCtx,
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
+        // Get the number of elements we must read
+        let len = match ctx.len.take() {
+            None => {
+                let mut tmp = MaybeUninit::uninit();
+                *<DefaultCountType>::inner_from_reader(src, ctx, &mut tmp)? as usize
+            }
+            Some(v) => v,
+        };
+
+        // The maximum number of items we can pre-allocate to respect MAX_ALLOC_SIZE
+        let max_alloc_item_num: usize = std::cmp::max(MAX_ALLOC_SIZE / size_of::<T>(), 1);
+
+        let mut r = Vec::<MaybeUninit<T>>::new();
+
+        if T::IS_SAFE_REPR {
+            let mut items_left = len;
+            while items_left > 0 {
+                let num_items = std::cmp::min(max_alloc_item_num, items_left);
+                // Make sure our allocation can accomodate an extra `num_items`
+                let old_len = r.len();
+                r.reserve(num_items);
+
+                // Cast our allocation into &mut [u8]
+                let next_free_ptr = unsafe { r.get_unchecked_mut(old_len) } as *mut _ as *mut u8;
+                let dst_bytes = unsafe {
+                    core::slice::from_raw_parts_mut(
+                        next_free_ptr as *mut u8,
+                        num_items * size_of::<T>(),
+                    )
+                };
+
+                // Read `num_items` items into our allocation
+                if let Err(e) = src.read_exact(dst_bytes) {
+                    return Err(SpError::ReadFailed(e));
+                }
+                #[cfg(feature = "verbose")]
+                ::log::debug!("  read({})", dst_bytes.len());
+
+                ctx.cursor += dst_bytes.len();
+                unsafe {
+                    r.set_len(old_len + num_items);
+                }
+
+                // Validate every item's content
+                for v in r.iter_mut().skip(old_len) {
+                    unsafe { <T>::validate_contents(ctx, v)? };
+                }
+
+                items_left -= num_items;
+            }
+        } else {
+            for i in 0..len {
+                if i >= r.capacity() {
+                    r.reserve(std::cmp::min(max_alloc_item_num, len - i));
+                }
+                r.push({
+                    let mut v = MaybeUninit::uninit();
+                    <T>::inner_from_reader(src, ctx, &mut v)?;
+                    v
+                });
+            }
+        }
+
+        unsafe {
+            dst.write(core::mem::transmute(r));
+            Ok(dst.assume_init_mut())
+        }
+    }
+}
+
+impl<T: SpRead> SpRead for VecDeque<T> {
+    fn inner_from_reader<'a, R: Read + ?Sized>(
+        src: &mut R,
+        ctx: &mut SpCtx,
+        dst: &'a mut MaybeUninit<Self>,
+    ) -> Result<&'a mut Self, crate::SpError> {
+        // Use the Vec<T> implementation
+        let mut tmp = MaybeUninit::uninit();
+        <Vec<T>>::inner_from_reader(src, ctx, &mut tmp)?;
+
+        unsafe {
+            dst.write(VecDeque::from(tmp.assume_init()));
+            Ok(dst.assume_init_mut())
+        }
+    }
+}
+
 macro_rules! collection_read {
     ($typ:ty, $add_func:ident, $generic:tt $(: $bound:ident $(+ $other:ident)*)? $(, $generics:tt $(: $bounds:ident $(+ $others:ident)*)?)*) => {
         impl<'b, $generic : SpRead $(+ $bound $(+ $other)*)? $(, $generics : SpRead $(+ $bounds$(+ $others)*)?)*> SpRead for $typ  {
@@ -131,77 +224,6 @@ macro_rules! collection_read {
         }
     };
 }
-
-// TODO : Generalize this optimized Vec<T> impl to all collections
-
-impl<T: SpRead + Sized> SpRead for Vec<T> {
-    fn inner_from_reader<'a, R: Read + ?Sized>(
-        src: &mut R,
-        ctx: &mut SpCtx,
-        dst: &'a mut MaybeUninit<Self>,
-    ) -> Result<&'a mut Self, crate::SpError> {
-        // Get the number of elements we must read
-        let mut len = match ctx.len.take() {
-            None => {
-                let mut tmp = MaybeUninit::uninit();
-                *<DefaultCountType>::inner_from_reader(src, ctx, &mut tmp)? as usize
-            }
-            Some(v) => v,
-        };
-
-        let mut r: Vec<MaybeUninit<T>> = Vec::new();
-        if T::IS_SAFE_REPR {
-            while len > 0 {
-                let item_delta = std::cmp::min(MAX_ALLOC_SIZE / size_of::<T>(), len);
-
-                // Make enough space for an extra `item_delta` items
-                r.reserve(item_delta);
-                let cur_len = r.len();
-
-                unsafe {
-                    // Pointer to the next free item
-                    let next_free_ptr = r.as_mut_ptr().add(cur_len);
-
-                    // Read the content for the next `item_delta` items
-                    let dst_bytes = core::slice::from_raw_parts_mut(
-                        next_free_ptr as *mut u8,
-                        item_delta * size_of::<T>(),
-                    );
-                    if let Err(e) = src.read_exact(dst_bytes) {
-                        return Err(SpError::ReadFailed(e));
-                    }
-                    #[cfg(feature = "verbose")]
-                    ::log::debug!("  read({})", dst_bytes.len());
-
-                    ctx.cursor += dst_bytes.len();
-                    r.set_len(cur_len + item_delta);
-
-                    // Validate every item's content
-                    for v in &mut r[cur_len..] {
-                        <T>::validate_contents(ctx, v)?;
-                    }
-                }
-                len -= item_delta;
-            }
-        } else {
-            for _i in 0..len {
-                r.push({
-                    let mut v = MaybeUninit::uninit();
-                    <T>::inner_from_reader(src, ctx, &mut v)?;
-                    v
-                });
-            }
-        }
-
-        unsafe {
-            dst.write(core::mem::transmute(r));
-            Ok(dst.assume_init_mut())
-        }
-    }
-}
-
-//collection_read!(Vec<T>, push, T);
-collection_read!(VecDeque<T>, push_back, T);
 collection_read!(LinkedList<T>, push_back, T);
 collection_read!(HashSet<K>, insert, K: Eq + Hash);
 collection_read!(BTreeSet<K>, insert, K: Ord);

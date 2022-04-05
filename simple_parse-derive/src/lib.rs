@@ -3,24 +3,13 @@ use std::collections::HashMap;
 use darling::{FromDeriveInput, FromField, FromVariant};
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DataEnum, DeriveInput, Field, GenericParam, Generics, Type};
+use syn::{parse_macro_input, DataEnum, DeriveInput, Field, GenericParam, Generics};
 
 mod attributes;
-mod opt_hints;
 mod read;
 mod write;
 
 pub(crate) use attributes::*;
-
-#[proc_macro_derive(SpOptHints, attributes(sp))]
-/// Implements SpOptHints
-///
-/// For a list of valid `#[sp(X)]` attributes, consult [attributes.rs](https://github.com/elast0ny/simple_parse/tree/master/simple_parse-derive/src/attributes.rs)
-pub fn generate_opt_hints(input: TokenStream) -> TokenStream {
-    let mut input = parse_macro_input!(input as DeriveInput);
-    let res = opt_hints::generate(&mut input);
-    proc_macro::TokenStream::from(res)
-}
 
 #[proc_macro_derive(SpRead, attributes(sp))]
 /// Implements SpRead and SpOptHints
@@ -161,79 +150,6 @@ pub(crate) fn smallest_type_for_num(num: usize) -> &'static str {
         "u64"
     } else {
         "u128"
-    }
-}
-
-/// Returns whether a type is variably sized
-pub(crate) fn is_var_size(typ: &Type, attrs: Option<&FieldAttributes>) -> bool {
-    if let Some(attrs) = attrs {
-        // Types that take a `len` are always variably sized
-        if attrs.len.is_some() || attrs.var_size.is_some() || attrs.reader.is_some() {
-            return true;
-        }
-    }
-
-    let field_ty: String = match typ {
-        syn::Type::Reference(r) => {
-            let t = r.elem.as_ref();
-            (quote! {&#t}).to_string()
-        }
-        _ => (quote! {#typ}).to_string(),
-    };
-
-    // All the types we know are dynamic
-    if field_ty.starts_with("& [")
-        || field_ty == "& str"
-        || field_ty == "String"
-        || field_ty == "& CStr"
-        || field_ty == "CString"
-        || field_ty.starts_with("Option <")
-        || field_ty.starts_with("Vec <")
-        || field_ty.starts_with("VecDeque <")
-        || field_ty.starts_with("LinkedList <")
-        || field_ty.starts_with("HashSet <")
-        || field_ty.starts_with("BTreeSet <")
-        || field_ty.starts_with("HashMap <")
-        || field_ty.starts_with("BTreeMap <")
-        || field_ty.starts_with("BinaryHeap <")
-    {
-        return true;
-    }
-
-    false
-}
-
-/// Returns the static size of a type
-///
-/// This is needed to get around an issue with const generics.
-/// When Self is a generic type, it's Self::STATIC_SIZE cannot be evaluated as const so
-/// we must use another non-generic type's STATIC_SIZE.
-pub(crate) fn get_static_size(typ: &Type) -> proc_macro2::TokenStream {
-    let field_ty = quote! {#typ}.to_string();
-    // Return <bool>::STATIC_SIZE for Option<T>
-    if field_ty.starts_with("Option <") {
-        quote! {
-            <bool as ::simple_parse::SpOptHints>::STATIC_SIZE
-        }
-    // Return <DefaultCountType>::STATIC_SIZE for generic containers
-    } else if field_ty.starts_with("Vec <")
-        || field_ty.starts_with("VecDeque <")
-        || field_ty.starts_with("LinkedList <")
-        || field_ty.starts_with("HashSet <")
-        || field_ty.starts_with("BTreeSet <")
-        || field_ty.starts_with("HashMap <")
-        || field_ty.starts_with("BTreeMap <")
-        || field_ty.starts_with("BinaryHeap <")
-    {
-        quote! {
-            <::simple_parse::DefaultCountType as ::simple_parse::SpOptHints>::STATIC_SIZE
-        }
-    } else if field_ty.contains('<') {
-        panic!("Generic type '{}' cannot be used as a field because Rust currently does not handle const generics properly (Required for SpOptHints::STATIC_SIZE)", field_ty);
-    } else {
-        quote! {
-            <#typ as ::simple_parse::SpOptHints>::STATIC_SIZE
-        }
     }
 }
 

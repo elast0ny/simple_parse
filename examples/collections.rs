@@ -14,7 +14,11 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The default format for collections is to use a u32 for
     // it's length followed by the items
     let mut bytes: &[u8] = &[
-        0x04, 0x00, 0x00, 0x00, 0xAA, 0xBB, 0xCC, 0xDD, 0x44, 0x33, 0x22, 0x11,
+        0x04, 0x00, 0x00, 0x00, // Number of values
+        0xAA, 0xBB, //val[0]
+        0xCC, 0xDD, //val[1]
+        0x44, 0x33, //val[2]
+        0x22, 0x11, //val[3]
     ];
 
     let mut v = MaybeUninit::uninit();
@@ -23,8 +27,11 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // HashMap & co. work the same
     let mut bytes: &[u8] = &[
-        0x02, 0x00, 0x00, 0x00, 0xAA, 0xBB, 0x05, 0x00, 0x00, 0x00, b'H', b'e', b'l', b'l', b'o',
-        0x11, 0x22, 0x02, 0x00, 0x00, 0x00, b'H', b'i',
+        0x02, 0x00, 0x00, 0x00, // Number of HashMap entries
+        0xBB, 0xAA, // key[0]
+        0x05, 0x00, 0x00, 0x00, b'H', b'e', b'l', b'l', b'o', // val[0]
+        0x22, 0x11, // key[1]
+        0x02, 0x00, 0x00, 0x00, b'H', b'i', // val[1]
     ];
     let mut v = MaybeUninit::uninit();
     println!(

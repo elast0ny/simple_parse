@@ -9,49 +9,58 @@
 
 | Features | Description |
 |:----:|:----|
-| Fast| The generated parsing code is often faster than "idiomatic" C implementations|
-| [No copy](examples/no_copy.rs) | Able to return references into byte slices |
+| Single "copy" | The data is read directly into it's final destination whenever possible |
 | Built-in endianness support | Annotating structs/fields with `endian` gives control over how numbers will be parsed |
 | Convert back to bytes | In addition to parsing arbitrary bytes, `simple_parse` also allows dumping structs back into binary form |
 
 ***
 
-If `simple_parse` is unable to describe your complex/non-standard binary formats, take a look at [deku](https://github.com/sharksforarms/deku).
+If `simple_parse` is unable to describe your complex/non-standard binary formats, take a look at [deku](https://github.com/sharksforarms/deku) or [binrw](https://github.com/jam1garner/binrw).
 
 ## Usage
 
-Snippets taken from [examples/struct.rs](examples/struct.rs)
+See [client_server](examples/client_server.rs) for the complete example.
+
 ```Rust
 use ::simple_parse::{SpRead, SpWrite};
 
 #[derive(SpRead, SpWrite)]
-pub struct SomeStruct {
-    pub some_field: u8,
-    #[sp(endian="big")]
-    pub items: Vec<u32>,
+pub enum Message {
+    Ping,
+    Pong,
+    Chat(String),
+    Key {
+        private: Vec<u8>,
+        public: Vec<u8>,
+    },
+    Disconnect,
 }
 
-// Emulate data coming from a socket
-let mut srv_sock: &[u8] = &[
-    1,                      // some_field
-    0,0,0,2,                // items.len()
-    0xDE,0xAD,0xBE,0xEF,    // items[0]
-    0xBA,0xDC,0x0F,0xFE     // items[1]
-];
+pub fn main() {
+    /* <...> */
+    
+    loop {
+        // Receive & parse bytes from the socket as a `Message` using SpRead
+        let msg = Message::from_reader(&mut sock, &mut dst).expect("[server] Failed to receive message");
 
-// Parse incoming bytes into SomeStruct
-let mut my_struct = SomeStruct::from_reader(&mut srv_sock)?;
+        match msg {
+            Message::Ping => {
+                println!("[server] Got Ping ! Sending Pong...");
+                // Respond with a Pong using SpWrite
+                (Message::Pong).to_writer(&mut sock).expect("[server] Failed to send Pong");
+            },
+            Message::Pong => println!("[server] got pong !"),
+            Message::Chat(s) => println!("[server] Received chat : '{s}'"),
+            Message::Key{private, public} => println!("[server] got keys : {private:X?}:{public:X?}"),
+            Message::Disconnect => break,
+        }
+    }
 
-/// Modify the struct
-my_struct.items.push(0xFFFFFFFF);
-
-/// Encode our struct back into bytes
-let mut cli_sock: Vec<u8> = Vec::new();
-my_struct.to_writer(&mut cli_sock)?;
-//dst_buf == [1, 0, 0, 0, 3, DE, AD, BE, EF, BA, DC, F, FE, FF, FF, FF, FF]
+    /* <...> */
+}
 ```
 
-For complete examples see : [examples](examples/)
+For more examples see : [examples/](examples/)
 
 
 ## Project Goals
@@ -64,7 +73,7 @@ In vague order of priority, `simple_parse` aims to provide :
 
 In other words, `simple_parse` will try to generate the most performant code while never compromising on safety.
 
-Secondly, priority will be given to ease of use by providing default implementations that work well in most cases while also allowing *some* customisation to accomodate for binary formats we cannot control (see the bmp image parsing [example](examples/bmp/)).
+Secondly, priority will be given to ease of use by providing default implementations that work well in most cases while also allowing *some* customisation to accomodate for binary formats we cannot control.
 
 ## Advanced Usage
 `simple_parse` provides a few ways to enhance the generate parsing code. See [attributes.rs](simple_parse-derive/src/attributes.rs) for an exhaustive list of options.
@@ -77,20 +86,19 @@ For example, BMP image headers must always start with the two first bytes being 
 struct BmpHeader {
     #[sp(validate = "validate_header")]
     magic: u16,
+    #[sp(endian="big")]
     size: u32,
     reserved1: u16,
     reserved2: u16,
     pixel_array_offset: u32,
     // ...
 ```
-(Taken from [bmp example](examples/bmp/main.rs))
-
 This tells `simple_parse` to insert a call to `validate_header(magic: &u16, ctx: &mut SpCtx)` directly after having populated the `u16` when reading and before dumping the struct as bytes when writing.
 
 ### __Custom Length (for TLV style)__
 `simple_parse` provides default implementations for dynamically sized types by simply prepending the number of elements (`len`) followed by the elements.
 
-i.e. A Vec<u8> with three values turns into :
+i.e. By default, a `Vec<u8>` with three values will map to :
 ```Rust
 // [len] | [len] * [elements]
 [3u32][val1][val2][val3]
@@ -127,8 +135,6 @@ And when writing :
 ```Rust
 written_sz += BmpComp::write(&self.compression_info, ctx: &mut SpCtx, dst: &mut Write)?;
 ```
-
-Note : Using `reader` will generate suboptimal parsing code as `simple_parse` cannot make any assumptions about the custom `reader`'s impact on the input bytes.
 
 ## License
 
